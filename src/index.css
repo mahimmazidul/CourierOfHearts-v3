@@ -283,7 +283,7 @@ body {
   .print-letter * { color: #1a1208 !important; animation: none !important; opacity: 1; filter: none !important; }
   /* Upper + lower decorative frame on every page */
   .print-border { border: 3px double rgba(139,115,64,0.4) !important; display: block !important; }
-  .print-safe-body { max-height: 210mm; overflow: hidden; }
+  .print-safe-body { max-height: 231mm; overflow: hidden; }
   .print-letter [style*="mix-blend-mode"], .print-letter [style*="mixBlendMode"] { opacity: 0.14 !important; }
   .coh-emoji { color: #1a1208 !important; }
   .coh-flower-remove { display: none !important; }

@@ -19,11 +19,15 @@ export interface PaginateOptions {
   lastPageReservedPx?: number;
 }
 
+// Measured against PRINT geometry (the strict constraint): A4 article is
+// 180mm wide with 18mm padding -> 144mm ≈ 544px of text width, and 270mm−36mm
+// ≈ 884px of height (kept at 850 for a safety margin). On screen the paper is
+// wider, so text only ever takes LESS room than measured — never overflows.
 const DEFAULTS = {
-  widthPx: 640,
-  pageHeightPx: 760,
+  widthPx: 544,
+  pageHeightPx: 860,
   firstPageReservedPx: 130,
-  lastPageReservedPx: 170,
+  lastPageReservedPx: 175,
 };
 
 function isBrowser(): boolean {
@@ -66,6 +70,8 @@ function makeMeasurer(options: Required<PaginateOptions>): HTMLDivElement {
     'position:absolute', 'left:-99999px', 'top:0', 'visibility:hidden',
     `width:${options.widthPx}px`,
     `font-family:${options.fontFamily}`,
+    // Print media queries evaluate against A4 page width (~794px), which
+    // passes the md: breakpoint — print text is 18px, same as desktop.
     'font-size:18px', 'line-height:1.95',
     'letter-spacing:0.01em', 'word-spacing:0.04em',
     'white-space:pre-wrap', 'overflow-wrap:anywhere',
@@ -130,21 +136,27 @@ function isPlainBlock(html: string): { plain: boolean; text: string } {
   return { plain, text: (host.textContent || '') };
 }
 
+// A head or tail smaller than this many graphemes would read as an orphaned
+// fragment ('hey,' alone at the bottom of a page) — better to move the whole
+// paragraph to the next page.
+const MIN_SPLIT_PIECE = 110;
+
 /**
- * Fill the remaining space on a page by splitting a plain paragraph at a
- * space (grapheme-safe). Returns [head, tail] or null when a split is not
- * worthwhile (formatted block, tiny remainder, or nothing usefully fits).
+ * Fill the remaining space on a page by splitting a plain paragraph —
+ * preferably at a sentence end (। . ! ?), otherwise at a word boundary.
+ * Grapheme-safe. Returns null whenever a split would leave a tiny fragment
+ * on either side, so short lines always travel to the next page whole.
  */
 function splitBlockToFill(
   blockHtml: string,
   measurer: HTMLDivElement,
   remainingPx: number
 ): [string, string] | null {
-  if (remainingPx < 160) return null; // small gaps read as intentional
+  if (remainingPx < 90) return null; // tiny gaps read as intentional
   const { plain, text } = isPlainBlock(blockHtml);
   if (!plain) return null; // never flatten bold/italic/aligned content
   const parts = textGraphemes(text);
-  if (parts.length < 80) return null;
+  if (parts.length < MIN_SPLIT_PIECE * 2) return null; // both pieces must be substantial
 
   let low = 1;
   let high = parts.length;
@@ -154,14 +166,28 @@ function splitBlockToFill(
     measurer.textContent = parts.slice(0, mid).join('');
     if (measurer.offsetHeight <= remainingPx) { fit = mid; low = mid + 1; } else { high = mid - 1; }
   }
-  if (fit < 40 || fit >= parts.length) return null;
-  let cut = fit;
-  while (cut > fit * 0.5 && parts[cut - 1] !== ' ') cut--;
-  if (parts[cut - 1] !== ' ') return null; // no word boundary — keep block whole
+  if (fit < MIN_SPLIT_PIECE || fit >= parts.length) return null;
+
+  // 1st choice: latest sentence boundary within the fitting range.
+  const isSentenceEnd = (i: number) =>
+    /[।.!?]/.test(parts[i]) && (i + 1 >= parts.length || parts[i + 1] === ' ');
+  let cut = -1;
+  for (let i = fit - 1; i >= Math.floor(fit * 0.55); i--) {
+    if (isSentenceEnd(i)) { cut = i + 1; break; }
+  }
+  // 2nd choice: latest word boundary.
+  if (cut < 0) {
+    for (let i = fit; i > Math.floor(fit * 0.55); i--) {
+      if (parts[i - 1] === ' ') { cut = i; break; }
+    }
+  }
+  if (cut < MIN_SPLIT_PIECE) return null;
+  if (parts.length - cut < MIN_SPLIT_PIECE) return null; // tail would be an orphan
+
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const head = parts.slice(0, cut).join('').trimEnd();
   const tail = parts.slice(cut).join('').trimStart();
-  if (!tail) return null;
+  if (!head || !tail) return null;
   return [`<div>${esc(head)}</div>`, `<div>${esc(tail)}</div>`];
 }
 
@@ -195,9 +221,19 @@ export function paginateRichHtml(html: string, options: PaginateOptions): string
     let currentHeight = 0;
     let budget = opts.pageHeightPx - opts.firstPageReservedPx;
 
+    const blockIsEmpty = (blockHtml: string) => {
+      measurer.innerHTML = blockHtml;
+      return !(measurer.textContent || '').trim();
+    };
+    const trimTrailingEmpties = () => {
+      while (current.length && blockIsEmpty(current[current.length - 1])) current.pop();
+    };
+
     const queue = [...blocks];
     while (queue.length) {
       const block = queue.shift() as string;
+      // Blank spacer paragraphs never open a page — they are dead space there.
+      if (current.length === 0 && blockIsEmpty(block)) continue;
       measurer.innerHTML = block;
       const h = measurer.offsetHeight;
       if (current.length && currentHeight + h > budget) {
@@ -211,6 +247,7 @@ export function paginateRichHtml(html: string, options: PaginateOptions): string
         } else {
           queue.unshift(block);
         }
+        trimTrailingEmpties();
         pages.push(current.join(''));
         current = [];
         currentHeight = 0;
@@ -224,6 +261,7 @@ export function paginateRichHtml(html: string, options: PaginateOptions): string
     const lastBudget = (pages.length === 0 ? opts.pageHeightPx - opts.firstPageReservedPx : opts.pageHeightPx) - opts.lastPageReservedPx;
     if (current.length > 1 && currentHeight > lastBudget) {
       const moved = current.pop() as string;
+      trimTrailingEmpties();
       pages.push(current.join(''));
       pages.push(moved);
     } else {

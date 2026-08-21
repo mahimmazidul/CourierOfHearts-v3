@@ -4,6 +4,7 @@ import { getLetter } from '@/services/api';
 import WaxSealIcon from '@/components/icons/WaxSealIcon';
 import { OrnamentDivider, RavenIcon } from '@/components/icons/SvgIcons';
 import DustParticles from '@/components/effects/DustParticles';
+import { isDemoMode } from '@/services/demoApi';
 
 interface LetterSentPageProps {
   slug: string;
@@ -26,7 +27,13 @@ export default function LetterSentPage({ slug, onBack, onPreview }: LetterSentPa
     })();
   }, [slug]);
 
-  const shareUrl = `${window.location.origin}${window.location.pathname.replace(/index\.html$/, '')}#/letter/${slug}`;
+  // Production: clean path — the server can then serve per-letter share
+  // metadata (fragments never reach servers/crawlers). Demo build keeps the
+  // hash route since GitHub Pages has no backend.
+  const basePath = window.location.pathname.replace(/index\.html$/, '');
+  const shareUrl = isDemoMode
+    ? `${window.location.origin}${basePath}#/letter/${slug}`
+    : `${window.location.origin}/letter/${slug}`;
 
   const handleCopy = async () => {
     // Clipboard API first; several mobile browsers reject it, so fall back

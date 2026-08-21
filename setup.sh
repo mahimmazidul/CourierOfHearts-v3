@@ -321,10 +321,15 @@ server {
         client_max_body_size 1m;
     }
 
-    # Letter pages: generic share metadata + noindex, never letter content.
+    # Letter pages: the backend serves generic share metadata (it knows
+    # whether a letter is protected). Never letter content, always noindex.
     location ~ ^/letter/ {
-        add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
-        try_files /letter.html =404;
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
     location = /privacy { try_files /index.html =404; }
     location = /thanks  { try_files /index.html =404; }

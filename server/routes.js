@@ -103,6 +103,43 @@ function buildStoredPayload(payload, existing = {}) {
 
 const RL = (max, timeWindow) => ({ config: { rateLimit: { max, timeWindow } } });
 
+// Share/preview page for /letter/<slug>. Crawlers do not run the SPA, so
+// this real HTTP response is what social apps see. It stays deliberately
+// generic — no names, no titles, no content — but distinguishes protected
+// letters ("private") from open ones. Browsers are redirected into the app.
+function sharePageHtml(slug, isProtected) {
+  const title = isProtected ? 'A private letter awaits you \u{1F48C}' : 'A letter awaits you \u{1F48C}';
+  const description = isProtected
+    ? 'Someone left something special for you on CourierOfHearts.'
+    : 'Someone wrote you something from the heart on CourierOfHearts.';
+  const image = `${config.publicBaseUrl}/images/envelope.jpg`;
+  const safeSlug = encodeURIComponent(String(slug)).replace(/%2F/gi, '');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>${title} \u2014 Courier of Hearts</title>
+<meta name="description" content="${description}" />
+<meta name="robots" content="noindex,nofollow,noarchive" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Courier of Hearts" />
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${description}" />
+<meta property="og:image" content="${image}" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="${title}" />
+<meta name="twitter:description" content="${description}" />
+<script>window.location.replace('/#/letter/' + ${JSON.stringify(safeSlug)});</script>
+</head>
+<body>
+<p style="font-family: Georgia, serif; text-align: center; margin-top: 4rem; color: #3d3020;">
+${title} \u2014 <a href="/#/letter/${safeSlug}">open Courier of Hearts</a>
+</p>
+</body>
+</html>`;
+}
+
 // Rate limits are env-tunable for test environments ONLY; production keeps
 // the strict defaults below (see .env.example — do not raise these casually).
 const CREATE_MAX = Number(process.env.RATE_LIMIT_CREATE_MAX || 12);
@@ -119,6 +156,21 @@ export function registerRoutes(fastify) {
   };
   fastify.get('/api/health', healthHandler);
   fastify.get(`${API_PREFIX}/health`, healthHandler);
+
+  // ---- Share preview page (proxied from nginx for /letter/*) -----------------
+  fastify.get('/letter/:slug', RL(120, '1 minute'), async (request, reply) => {
+    const { slug } = request.params;
+    let isProtected = false;
+    if (isValidSlug(slug)) {
+      const row = findLetter(slug);
+      if (row) isProtected = Boolean(row.is_private);
+    }
+    reply
+      .header('X-Robots-Tag', 'noindex, nofollow, noarchive')
+      .header('Cache-Control', 'no-store')
+      .type('text/html; charset=utf-8')
+      .send(sharePageHtml(slug, isProtected));
+  });
 
   // ---- Create ---------------------------------------------------------------
   fastify.post(`${API_PREFIX}/letters`, RL(CREATE_MAX, '15 minutes'), async (request, reply) => {
