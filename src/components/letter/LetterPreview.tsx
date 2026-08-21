@@ -55,15 +55,16 @@ export default function LetterPreview({
   flowers = [], onBack, onSend, sending, readOnly,
 }: LetterPreviewProps) {
   const fontFamily = getFontFamilyByChoice(bodyFont);
-  // The preview shows the same letter-by-letter arrival the recipient sees.
+  // The preview shows the same letter-by-letter arrival the recipient sees:
+  // salutation first, then the body ink, then closing/signature.
   const [pagesDone, setPagesDone] = useState(0);
   const [inkSettled, setInkSettled] = useState(0);
-  // Salutation first, then the body ink — same order the recipient reads in.
   const [bodyStarted, setBodyStarted] = useState(false);
+
   useEffect(() => {
     const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    const t = setTimeout(() => setBodyStarted(true), reduced ? 0 : 1100);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setBodyStarted(true), reduced ? 0 : 1100);
+    return () => clearTimeout(timer);
   }, []);
 
   // Letter content is ALWAYS HTML (contentEditable entity-encodes text), so
