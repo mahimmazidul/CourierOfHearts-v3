@@ -1,7 +1,0 @@
-User-agent: *
-Allow: /
-Disallow: /letter/
-Disallow: /read/
-Disallow: /preview/
-
-Sitemap: https://domain.com/sitemap.xml

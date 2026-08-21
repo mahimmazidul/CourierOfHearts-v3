@@ -8,134 +8,23 @@ import { HeartSigilIcon, OrnamentDivider, CornerOrnament } from '@/components/ic
 import CrestDecoration from '@/components/letter/CrestDecoration';
 import { FlowerLayer } from '@/components/letter/LetterPreview';
 import { getFontFamilyByChoice, getSigFontFamilyByChoice } from '@/config/fonts';
-import { escapeLetterHtml, hasRichLetterHtml, sanitizeLetterHtml } from '@/utils/sanitizeHtml';
+import { sanitizeLetterHtml } from '@/utils/sanitizeHtml';
 import { engraveEmojiHtml } from '@/utils/emojiEngrave';
-import { paginateRichHtml, splitPlainIntoPages } from '@/utils/paginate';
+import { paginateRichHtml } from '@/utils/paginate';
+import RevealHtml, { reducedMotion } from '@/components/letter/RevealHtml';
 
 type Step = 'loading' | 'error' | 'password' | 'arriving' | 'envelope' | 'cracking' | 'opening' | 'rising' | 'reading';
 
-/**
- * Ink reveal ("typewriter") for sanitized letter HTML.
- * The DOM is built ONCE; each animation frame only appends characters to the
- * current text node — no re-parsing, no re-render, O(1) work per frame. This
- * replaces v1's per-frame full HTML re-slice, which was the main source of
- * jank on long letters.
- */
-function RevealHtml({ html, fontFamily, onDone }: { html: string; fontFamily: string; onDone: () => void }) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const doneRef = useRef(onDone);
-  doneRef.current = onDone;
-
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    host.innerHTML = html;
-
-    // Collect reveal units in document order: text nodes + engraved emoji.
-    interface Unit { kind: 'text'; node: Text; full: string } 
-    interface SvgUnit { kind: 'svg'; el: SVGElement }
-    const units: (Unit | SvgUnit)[] = [];
-    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
-    let current: Node | null = walker.nextNode();
-    while (current) {
-      if (current.nodeType === Node.TEXT_NODE) {
-        const textNode = current as Text;
-        if (textNode.textContent) {
-          units.push({ kind: 'text', node: textNode, full: textNode.textContent });
-          textNode.textContent = '';
-        }
-      } else if ((current as Element).classList?.contains('coh-emoji')) {
-        const el = current as SVGElement;
-        el.style.visibility = 'hidden';
-        units.push({ kind: 'svg', el });
-      }
-      current = walker.nextNode();
-    }
-
-    const totalChars = units.reduce((sum, unit) => sum + (unit.kind === 'text' ? [...unit.full].length : 1), 0);
-    if (reducedMotion() || totalChars === 0) {
-      finishAll();
-      doneRef.current();
-      return;
-    }
-
-    const msPerChar = Math.max(12, Math.min(45, 2600 / Math.max(totalChars, 1)));
-    let unitIndex = 0;
-    let charIndex = 0; // grapheme index within current text unit
-    let carriedGraphemes: string[] | null = null;
-    let last = 0;
-    let raf = 0;
-    let finished = false;
-
-    // Printing mid-reveal must never produce a half-written page.
-    function completeForPrint() {
-      if (finished) return;
-      finished = true;
-      cancelAnimationFrame(raf);
-      finishAll();
-      doneRef.current();
-    }
-    window.addEventListener('beforeprint', completeForPrint);
-
-    function finishAll() {
-      for (const unit of units) {
-        if (unit.kind === 'text') unit.node.textContent = unit.full;
-        else unit.el.style.visibility = '';
-      }
-    }
-
-    function tick(ts: number) {
-      if (!last) last = ts;
-      let budget = Math.floor((ts - last) / msPerChar);
-      if (budget > 0) last = ts;
-      while (budget > 0 && unitIndex < units.length) {
-        const unit = units[unitIndex];
-        if (unit.kind === 'svg') {
-          unit.el.style.visibility = '';
-          unitIndex++;
-          budget--;
-          continue;
-        }
-        if (!carriedGraphemes) carriedGraphemes = [...unit.full];
-        const take = Math.min(budget, carriedGraphemes.length - charIndex);
-        charIndex += take;
-        budget -= take;
-        unit.node.textContent = carriedGraphemes.slice(0, charIndex).join('');
-        if (charIndex >= carriedGraphemes.length) {
-          unitIndex++;
-          charIndex = 0;
-          carriedGraphemes = null;
-        }
-      }
-      if (unitIndex < units.length) raf = requestAnimationFrame(tick);
-      else { finished = true; doneRef.current(); }
-    }
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('beforeprint', completeForPrint);
-    };
-  }, [html]);
-
-  return (
-    <div ref={hostRef} className="rich-letter-content ink-engraved whitespace-pre-wrap"
-      style={{ fontFamily, letterSpacing: '0.01em', wordSpacing: '0.04em' }} />
-  );
-}
-
-function reducedMotion(): boolean {
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-}
-
 function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void }) {
-  const [typingDone, setTypingDone] = useState(false);
+  // Pages reveal in sequence: the ink reaches page 2 only after page 1 is
+  // fully written. pagesDone == number of fully revealed pages.
+  const [pagesDone, setPagesDone] = useState(0);
+  const [inkSettled, setInkSettled] = useState(0);
   const fontFamily = getFontFamilyByChoice(letter.bodyFont);
 
+  // Single content path: sanitize -> paginate -> engrave (see LetterPreview).
   const pages = useMemo(() => {
-    const isRich = hasRichLetterHtml(letter.content);
-    const raw = isRich
-      ? paginateRichHtml(sanitizeLetterHtml(letter.content), { fontFamily })
-      : splitPlainIntoPages(letter.content).map((page) => escapeLetterHtml(page));
+    const raw = paginateRichHtml(sanitizeLetterHtml(letter.content), { fontFamily });
     return raw.map((page) => engraveEmojiHtml(page));
   }, [letter.content, fontFamily]);
   const total = pages.length;
@@ -150,7 +39,8 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
         <button onClick={() => window.print()} className="font-heading text-[10px] tracking-[0.12em] text-ink/70 uppercase hover:text-ink transition-colors duration-500">Print</button>
       </nav>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10">
+      <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10"
+        onClick={() => { if (pagesDone < total) setInkSettled((n) => n + 1); }}>
         {pages.map((pageContent, pi) => (
           <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0 unfold-letter"
             style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px', animationDelay: pi === 0 ? '0s' : '0.4s' }}>
@@ -176,16 +66,16 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
             )}
 
             <div className="print-safe-body text-[17px] md:text-[18px] leading-[1.95] relative z-10">
-              {pi === 0 ? (
-                <RevealHtml html={pageContent} fontFamily={fontFamily} onDone={() => setTypingDone(true)} />
-              ) : (
-                <div className="rich-letter-content ink-fade-in ink-engraved whitespace-pre-wrap"
-                  style={{ fontFamily, letterSpacing: '0.01em', wordSpacing: '0.04em' }}
-                  dangerouslySetInnerHTML={{ __html: pageContent }} />
-              )}
+              <RevealHtml
+                html={pageContent}
+                fontFamily={fontFamily}
+                active={pi === pagesDone}
+                completeNow={inkSettled}
+                onDone={() => setPagesDone((done) => Math.max(done, pi + 1))}
+              />
             </div>
 
-            {pi === total - 1 && (typingDone || pi > 0) && (
+            {pi === total - 1 && pagesDone >= total && (
               <div className="relative z-10 ink-fade-in mt-8">
                 <div className="text-right space-y-1">
                   <p className="font-display text-base italic ink-engraved">{closing}</p>
@@ -200,6 +90,11 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
             <FlowerLayer flowers={letter.flowers || []} opacity={0.28} />
           </article>
         ))}
+        {pagesDone < total && (
+          <p className="no-print fixed bottom-4 left-1/2 -translate-x-1/2 font-body text-[12px] italic text-ink/40 select-none pointer-events-none">
+            tap the page to let the ink settle
+          </p>
+        )}
       </div>
     </div>
   );
@@ -214,8 +109,19 @@ export default function DeliveryPage({ slug, onBack }: { slug: string; onBack: (
   const [showRecovery, setShowRecovery] = useState(false);
   const [recoveryInput, setRecoveryInput] = useState('');
   const viewRecorded = useRef(false);
+  const ceremonyStarted = useRef(false);
 
   useEffect(() => {
+    // The component instance is reused when navigating between letters
+    // (hash change, same route shape) — per-letter guards must reset.
+    ceremonyStarted.current = false;
+    viewRecorded.current = false;
+    setLetter(null);
+    setPw('');
+    setPwErr('');
+    setShowRecovery(false);
+    setRecoveryInput('');
+    setStep('loading');
     (async () => {
       const result = await getLetter(slug);
       if (result.success && result.data) {
@@ -256,6 +162,8 @@ export default function DeliveryPage({ slug, onBack }: { slug: string; onBack: (
 
   // Ceremony: click seal → crack → flap opens → letter rises → reading
   const handleSeal = useCallback(() => {
+    if (ceremonyStarted.current) return; // rapid taps must not stack timelines
+    ceremonyStarted.current = true;
     if (!viewRecorded.current) {
       viewRecorded.current = true;
       void recordLetterView(slug);

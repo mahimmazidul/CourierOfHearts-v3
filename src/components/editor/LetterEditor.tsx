@@ -62,6 +62,10 @@ const LetterEditor = forwardRef<LetterEditorHandle, LetterEditorProps>(function 
   ref
 ) {
   const editorRef = useRef<HTMLDivElement>(null);
+  // Last non-collapsed selection inside the editor. Mobile browsers clear the
+  // live selection when the user taps into the Fonts tab (and the editor is
+  // hidden there), so font application falls back to this saved range.
+  const savedRangeRef = useRef<Range | null>(null);
   const [empty, setEmpty] = useState(true);
   const [activeStates, setActiveStates] = useState<Record<string, boolean>>({});
   const [showMore, setShowMore] = useState(false);
@@ -69,6 +73,7 @@ const LetterEditor = forwardRef<LetterEditorHandle, LetterEditorProps>(function 
   const emitChange = useCallback(() => {
     const el = editorRef.current;
     if (!el) return;
+    savedRangeRef.current = null;
     setEmpty(!el.textContent?.trim() && !el.querySelector('li'));
     onChange?.(el.innerHTML);
   }, [onChange]);
@@ -84,7 +89,18 @@ const LetterEditor = forwardRef<LetterEditorHandle, LetterEditorProps>(function 
 
   const refreshStates = useCallback(() => {
     const el = editorRef.current;
-    if (!el || !document.activeElement || !el.contains(window.getSelection()?.anchorNode || null)) return;
+    const selection = window.getSelection();
+    if (!el || !selection) return;
+    const inEditor = el.contains(selection.anchorNode);
+    if (inEditor && selection.rangeCount > 0) {
+      if (!selection.isCollapsed) {
+        savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+      } else if (el.offsetParent !== null && document.activeElement === el) {
+        // The user deliberately placed a caret — the old selection is stale.
+        savedRangeRef.current = null;
+      }
+    }
+    if (!document.activeElement || !inEditor) return;
     const next: Record<string, boolean> = {};
     for (const cmd of QUERYABLE) {
       try { next[cmd] = document.queryCommandState(cmd); } catch { next[cmd] = false; }
@@ -111,17 +127,49 @@ const LetterEditor = forwardRef<LetterEditorHandle, LetterEditorProps>(function 
     focus: () => editorRef.current?.focus(),
     getHtml: () => editorRef.current?.innerHTML || '',
     applyFontFamily: (family: string) => {
-      // Word-like semantics: apply ONLY when a real (non-collapsed) selection
-      // exists inside the editor; the caller falls back to changing the
-      // letter's base font otherwise.
+      // Word-like semantics: apply ONLY to a real selection; the caller falls
+      // back to changing the letter's base font when there is none. The full
+      // family chain (incl. Bengali fallbacks) is applied so mixed
+      // Bangla+English selections keep proper Bangla glyphs.
       const el = editorRef.current;
+      if (!el) return false;
       const selection = window.getSelection();
-      if (!el || !selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
-      if (!el.contains(selection.getRangeAt(0).commonAncestorContainer)) return false;
-      el.focus();
-      // The full family chain (incl. Bengali fallbacks) is applied so a mixed
-      // Bangla+English selection keeps proper Bangla glyphs.
-      document.execCommand('fontName', false, family);
+      const editorVisible = el.offsetParent !== null;
+
+      const liveRange = selection && selection.rangeCount > 0 && !selection.isCollapsed
+        && el.contains(selection.getRangeAt(0).commonAncestorContainer)
+        ? selection.getRangeAt(0)
+        : null;
+
+      if (liveRange && editorVisible) {
+        el.focus();
+        document.execCommand('fontName', false, family);
+        savedRangeRef.current = null;
+        emitChange();
+        return true;
+      }
+
+      // Mobile path: the editor is hidden (Fonts tab) or the browser dropped
+      // the selection — restyle the remembered range directly in the DOM.
+      // execCommand cannot operate on a hidden editing host, so the range is
+      // wrapped manually (mirrors what execCommand('fontName') produces).
+      const range = liveRange || savedRangeRef.current;
+      if (!range || range.collapsed) return false;
+      if (!el.contains(range.commonAncestorContainer) || !range.startContainer.isConnected) {
+        savedRangeRef.current = null;
+        return false;
+      }
+      try {
+        const fragment = range.extractContents();
+        const wrapper = document.createElement('font');
+        wrapper.setAttribute('face', family);
+        wrapper.appendChild(fragment);
+        range.insertNode(wrapper);
+      } catch {
+        savedRangeRef.current = null;
+        return false;
+      }
+      savedRangeRef.current = null;
       emitChange();
       return true;
     },

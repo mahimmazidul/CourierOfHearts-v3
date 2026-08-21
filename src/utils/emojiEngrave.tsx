@@ -62,20 +62,32 @@ function engravingMarkup(emoji: string): string {
   return `<svg class="coh-emoji" role="img" aria-label="${escapeAttr(meta.label)}" viewBox="0 0 24 24"${tint}><use href="#coh-e-${meta.id}"></use></svg>`;
 }
 
+const ZWJ = '\u200D';
+
+// A match that is part of a larger ZWJ sequence (e.g. ❤️‍🔥 = heart+ZWJ+fire)
+// must be left intact so unsupported composite emoji fall back to native
+// rendering as a whole, never as engraving + leftover fragments.
+function replaceOutsideZwj(text: string): string {
+  return text.replace(PATTERN, (match, offset: number, whole: string) => {
+    if (whole[offset - 1] === ZWJ || whole[offset + match.length] === ZWJ) return match;
+    return engravingMarkup(match);
+  });
+}
+
 /**
  * Replace supported emoji in sanitized letter HTML with engraved SVGs.
  * MUST be called on already-sanitized HTML only.
  */
 export function engraveEmojiHtml(sanitizedHtml: string): string {
   if (!sanitizedHtml) return sanitizedHtml;
-  return sanitizedHtml.replace(PATTERN, (match) => engravingMarkup(match));
+  return replaceOutsideZwj(sanitizedHtml);
 }
 
 /** Same transformation for plain-text strings (returns HTML). */
 export function engraveEmojiText(text: string): string {
   const escaped = text
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return escaped.replace(PATTERN, (match) => engravingMarkup(match));
+  return replaceOutsideZwj(escaped);
 }
 
 export function hasEngravableEmoji(text: string): boolean {

@@ -12,23 +12,29 @@ interface DemoLetter extends Letter {
   demoPassword?: string;
 }
 
+// Sandboxed embeds (e.g. the in-chat file viewer) block localStorage
+// entirely; the demo then falls back to this in-memory store so the full
+// compose → send → ceremony flow still works within the session.
+let memoryStore: DemoLetter[] = [];
+
 function load(): DemoLetter[] {
   try {
     const raw = localStorage.getItem(STORE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed : memoryStore;
   } catch {
-    return [];
+    return memoryStore;
   }
 }
 
 function save(letters: DemoLetter[]): void {
+  memoryStore = letters.slice(-20);
   try {
     // Cap demo storage; oldest letters fall away instead of filling the quota.
     localStorage.setItem(STORE_KEY, JSON.stringify(letters.slice(-20)));
   } catch {
     // Quota exceeded — drop older demo letters and retry once.
-    try { localStorage.setItem(STORE_KEY, JSON.stringify(letters.slice(-5))); } catch { /* give up quietly */ }
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(letters.slice(-5))); } catch { /* memory store still has them */ }
   }
 }
 

@@ -344,3 +344,80 @@ body {
 @media (min-width: 1024px) {
   .coh-sendbar { background: transparent; backdrop-filter: none; padding: 0; margin: 0; box-shadow: none; }
 }
+
+
+/* ========== v3: CURSOR & INTERACTION SEMANTICS ==========
+   Tailwind v4 preflight leaves buttons with cursor:default; restore honest
+   cursor semantics across the whole app. */
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+a[href],
+select,
+summary,
+label:has(> input[type="checkbox"]),
+label:has(> .sr-only) {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+input[type="text"],
+input[type="password"],
+textarea,
+[contenteditable="true"] {
+  cursor: text;
+}
+
+/* Accidental text selection is undesirable on control chrome — but never on
+   readable letter text. */
+.editor-toolbar,
+.editor-tool,
+.coh-flower-remove,
+nav button,
+.coh-sendbar button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Engraved emoji are part of the prose: they must never intercept clicks or
+   interrupt text selection sweeps. */
+.coh-emoji {
+  pointer-events: none;
+}
+
+/* A single enormous unbroken word must wrap inside the parchment in the
+   rendered letter, matching the editor's behavior. */
+.rich-letter-content {
+  overflow-wrap: anywhere;
+}
+
+/* Pressed feedback: immediate, tactile, no layout shift (filter only).
+   transition:none while pressed so the slow decorative color fades never
+   delay the press response. */
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  filter: brightness(0.93);
+  transition: none;
+}
+
+/* "This is where I write": quiet hover/focus tint on the editable region.
+   Background only — zero layout shift. */
+.rich-letter-editor:hover {
+  background-color: rgba(139,115,64,0.025);
+}
+.rich-letter-editor:focus {
+  background-color: rgba(139,115,64,0.045);
+}
+
+/* Keyboard-focus ring for the editor matches the site's gold, and only for
+   keyboard navigation (mouse focus keeps the calm tint above). */
+.rich-letter-editor:focus-visible {
+  outline: 2px solid rgba(139,115,64,0.55);
+  outline-offset: 4px;
+}
+
+/* The scrollbar appearing/disappearing must never nudge the page sideways. */
+html {
+  scrollbar-gutter: stable;
+}

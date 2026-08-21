@@ -163,10 +163,16 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
   }, []);
 
   const applyBodyFont = useCallback((font: FontChoice) => {
-    // Like Word: with a selection, restyle only the selected text.
-    // With no selection, the choice sets the letter's base font.
+    // Like Word: with a selection (live, or remembered across the mobile tab
+    // switch), restyle only the selected text. Otherwise set the base font.
     const appliedToSelection = editorRef.current?.applyFontFamily(getFontFamilyByChoice(font));
-    if (!appliedToSelection) setBodyFont(font);
+    if (!appliedToSelection) {
+      setBodyFont(font);
+      return;
+    }
+    // On mobile the fonts live in their own tab; jump back to the letter so
+    // the writer sees their word change.
+    setActiveTab((tab) => (tab === 'style' ? 'write' : tab));
   }, []);
 
   // ---- Flowers ----------------------------------------------------------------

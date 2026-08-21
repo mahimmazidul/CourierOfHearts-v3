@@ -101,6 +101,11 @@ function buildStoredPayload(payload, existing = {}) {
 
 const RL = (max, timeWindow) => ({ config: { rateLimit: { max, timeWindow } } });
 
+// Rate limits are env-tunable for test environments ONLY; production keeps
+// the strict defaults below (see .env.example — do not raise these casually).
+const CREATE_MAX = Number(process.env.RATE_LIMIT_CREATE_MAX || 12);
+const UNLOCK_MAX = Number(process.env.RATE_LIMIT_UNLOCK_MAX || 8);
+
 export function registerRoutes(fastify) {
   const healthHandler = (_request, reply) => {
     let dbOk = false;
@@ -114,7 +119,7 @@ export function registerRoutes(fastify) {
   fastify.get(`${API_PREFIX}/health`, healthHandler);
 
   // ---- Create ---------------------------------------------------------------
-  fastify.post(`${API_PREFIX}/letters`, RL(12, '15 minutes'), async (request, reply) => {
+  fastify.post(`${API_PREFIX}/letters`, RL(CREATE_MAX, '15 minutes'), async (request, reply) => {
     const payload = request.body || {};
     const errors = validateLetterPayload(payload);
     if (errors.length) return errorReply(reply, 400, errors.join('; '), 'VALIDATION_ERROR');
@@ -224,7 +229,7 @@ export function registerRoutes(fastify) {
   });
 
   // ---- Unlock with password --------------------------------------------------
-  fastify.post(`${API_PREFIX}/letters/:slug/unlock`, RL(8, '10 minutes'), async (request, reply) => {
+  fastify.post(`${API_PREFIX}/letters/:slug/unlock`, RL(UNLOCK_MAX, '10 minutes'), async (request, reply) => {
     const { slug } = request.params;
     if (!isValidSlug(slug)) return errorReply(reply, 400, 'Invalid letter id', 'VALIDATION_ERROR');
     const row = findLetter(slug);

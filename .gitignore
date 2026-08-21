@@ -56,3 +56,6 @@ playwright-report/
 *.bak
 *.tmp
 *.cache
+
+# single-file demo build (generated)
+dist-singlefile/

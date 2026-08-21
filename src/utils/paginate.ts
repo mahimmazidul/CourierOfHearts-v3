@@ -26,24 +26,6 @@ const DEFAULTS = {
   lastPageReservedPx: 170,
 };
 
-export function splitPlainIntoPages(text: string, charsPerPage = 900): string[] {
-  if (!text || text.length <= charsPerPage) return [text || ''];
-  const pages: string[] = [];
-  let remaining = text;
-  while (remaining.length > 0) {
-    if (remaining.length <= charsPerPage) { pages.push(remaining); break; }
-    let bp = remaining.lastIndexOf('\n\n', charsPerPage);
-    if (bp < charsPerPage * 0.4) bp = remaining.lastIndexOf('\n', charsPerPage);
-    if (bp < charsPerPage * 0.4) bp = remaining.lastIndexOf('. ', charsPerPage);
-    if (bp < charsPerPage * 0.25) bp = remaining.lastIndexOf(' ', charsPerPage);
-    if (bp <= 0) bp = charsPerPage;
-    pages.push(remaining.slice(0, bp + 1));
-    remaining = remaining.slice(bp + 1).trimStart();
-    if (!remaining) break;
-  }
-  return pages.length ? pages : [''];
-}
-
 function isBrowser(): boolean {
   return typeof document !== 'undefined';
 }
@@ -92,29 +74,43 @@ function makeMeasurer(options: Required<PaginateOptions>): HTMLDivElement {
   return el;
 }
 
+function textGraphemes(text: string): string[] {
+  try {
+    return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment);
+  } catch {
+    return [...text];
+  }
+}
+
 function splitOversizedBlock(blockHtml: string, measurer: HTMLDivElement, maxHeight: number): string[] {
-  // Binary-search a character split point in the block's text content.
+  // Binary-search a split point measured in GRAPHEME CLUSTERS, so a Bangla
+  // conjunct, a vowel sign, or a multi-codepoint emoji can never be cut in
+  // half across a page boundary.
   const host = document.createElement('div');
   host.innerHTML = blockHtml;
   const text = host.textContent || '';
   if (text.length < 40) return [blockHtml]; // do not over-split tiny content
 
   const pieces: string[] = [];
-  let rest = text;
-  while (rest.length) {
+  let parts = textGraphemes(text);
+  while (parts.length) {
     let low = 1;
-    let high = rest.length;
-    let fit = rest.length;
+    let high = parts.length;
+    let fit = parts.length;
     while (low <= high) {
       const mid = Math.floor((low + high) / 2);
-      measurer.textContent = rest.slice(0, mid);
+      measurer.textContent = parts.slice(0, mid).join('');
       if (measurer.offsetHeight <= maxHeight) { fit = mid; low = mid + 1; } else { high = mid - 1; }
     }
-    if (fit >= rest.length) { pieces.push(rest); break; }
-    let cut = rest.lastIndexOf(' ', fit);
-    if (cut < fit * 0.5) cut = fit;
-    pieces.push(rest.slice(0, cut));
-    rest = rest.slice(cut).trimStart();
+    if (fit >= parts.length) { pieces.push(parts.join('')); break; }
+    // Prefer breaking at a space (works for both Bangla and English, which
+    // share space-separated words); fall back to the grapheme boundary.
+    let cut = fit;
+    while (cut > fit * 0.5 && parts[cut - 1] !== ' ') cut--;
+    if (parts[cut - 1] !== ' ') cut = fit;
+    pieces.push(parts.slice(0, cut).join(''));
+    parts = parts.slice(cut);
+    while (parts[0] === ' ') parts.shift();
   }
   // NOTE: inline formatting inside an oversized single block is flattened for
   // the overflow pages; block-level structure (the common case) is preserved
@@ -172,6 +168,14 @@ export function paginateRichHtml(html: string, options: PaginateOptions): string
       pages.push(moved);
     } else {
       pages.push(current.join(''));
+    }
+    // Trailing whitespace-only blocks (e.g. a final <div><br></div>) must not
+    // become a blank page — nobody wants to print an empty sheet.
+    const probe = document.createElement('div');
+    while (pages.length > 1) {
+      probe.innerHTML = pages[pages.length - 1];
+      if ((probe.textContent || '').trim()) break;
+      pages.pop();
     }
     return pages.length ? pages : [html];
   } catch {

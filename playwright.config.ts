@@ -22,7 +22,13 @@ export default defineConfig({
       command: 'node server/index.js',
       url: 'http://127.0.0.1:3947/api/health',
       reuseExistingServer: true,
-      env: { BACKEND_PORT: '3947' },
+      env: {
+        BACKEND_PORT: '3947',
+        // Test-only: the e2e matrix creates far more letters than a human;
+        // production keeps the strict defaults.
+        RATE_LIMIT_CREATE_MAX: '1000',
+        RATE_LIMIT_UNLOCK_MAX: '1000',
+      },
     },
     {
       command: 'npm run dev -- --port 5173',

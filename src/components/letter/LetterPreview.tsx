@@ -1,13 +1,14 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useState } from 'react';
 import type { SealType, SealColor, CrestType, FontChoice, SignatureFont, FlowerPlacement } from '@/types/letter';
 import WaxSealIcon from '@/components/icons/WaxSealIcon';
 import { OrnamentDivider, CornerOrnament } from '@/components/icons/SvgIcons';
 import CrestDecoration from '@/components/letter/CrestDecoration';
 import { Flower, getFlowerMeta } from '@/components/icons/FlowerSvgs';
 import { getFontFamilyByChoice, getSigFontFamilyByChoice } from '@/config/fonts';
-import { hasRichLetterHtml, sanitizeLetterHtml, escapeLetterHtml } from '@/utils/sanitizeHtml';
+import { sanitizeLetterHtml } from '@/utils/sanitizeHtml';
 import { engraveEmojiHtml } from '@/utils/emojiEngrave';
-import { paginateRichHtml, splitPlainIntoPages } from '@/utils/paginate';
+import { paginateRichHtml } from '@/utils/paginate';
+import RevealHtml from '@/components/letter/RevealHtml';
 
 interface LetterPreviewProps {
   salutation?: string;
@@ -54,14 +55,16 @@ export default function LetterPreview({
   flowers = [], onBack, onSend, sending, readOnly,
 }: LetterPreviewProps) {
   const fontFamily = getFontFamilyByChoice(bodyFont);
+  // The preview shows the same letter-by-letter arrival the recipient sees.
+  const [pagesDone, setPagesDone] = useState(0);
+  const [inkSettled, setInkSettled] = useState(0);
 
-  // sanitize -> paginate by measured height -> engrave emoji per page.
+  // Letter content is ALWAYS HTML (contentEditable entity-encodes text), so
+  // there is exactly one path: sanitize -> paginate by measured height ->
+  // engrave emoji. Re-escaping entity-encoded content would double-escape
+  // (the old "&lt;" on parchment bug).
   const pages = useMemo(() => {
-    const isRich = hasRichLetterHtml(content);
-    const safe = isRich ? sanitizeLetterHtml(content) : escapeLetterHtml(content);
-    const raw = isRich
-      ? paginateRichHtml(safe, { fontFamily })
-      : splitPlainIntoPages(content).map((page) => escapeLetterHtml(page));
+    const raw = paginateRichHtml(sanitizeLetterHtml(content), { fontFamily });
     return raw.map((page) => engraveEmojiHtml(page));
   }, [content, fontFamily]);
   const totalPages = pages.length;
@@ -77,7 +80,8 @@ export default function LetterPreview({
         <button onClick={() => window.print()} className="font-heading text-[10px] tracking-[0.12em] text-ink/70 uppercase hover:text-ink transition-colors duration-500">Print</button>
       </nav>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10">
+      <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10"
+        onClick={() => { if (pagesDone < totalPages) setInkSettled((n) => n + 1); }}>
         {pages.map((pageContent, pi) => (
           <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0"
             style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px' }}>
@@ -103,14 +107,20 @@ export default function LetterPreview({
               </div>
             )}
 
-            {/* Body — deep engraved */}
-            <div className="rich-letter-content print-safe-body text-[17px] md:text-[18px] leading-[1.95] whitespace-pre-wrap relative z-10 ink-fade-in-delayed ink-engraved"
-              style={{ fontFamily, letterSpacing: '0.01em', wordSpacing: '0.04em' }}
-              dangerouslySetInnerHTML={{ __html: pageContent }} />
+            {/* Body — deep engraved, revealed letter by letter */}
+            <div className="print-safe-body text-[17px] md:text-[18px] leading-[1.95] relative z-10">
+              <RevealHtml
+                html={pageContent}
+                fontFamily={fontFamily}
+                active={pi === pagesDone}
+                completeNow={inkSettled}
+                onDone={() => setPagesDone((done) => Math.max(done, pi + 1))}
+              />
+            </div>
 
             {/* Last page: closing + signature */}
-            {pi === totalPages - 1 && (
-              <div className="relative z-10 mt-8 ink-fade-in-delayed-2">
+            {pi === totalPages - 1 && pagesDone >= totalPages && (
+              <div className="relative z-10 mt-8 ink-fade-in">
                 <div className="text-right space-y-1">
                   <p className="font-display text-base italic ink-engraved">{closing}</p>
                   <p className="text-2xl md:text-3xl ink-engraved" style={{ fontFamily: getSigFontFamilyByChoice(signatureFont) }}>{signature}</p>
