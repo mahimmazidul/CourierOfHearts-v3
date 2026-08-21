@@ -418,7 +418,13 @@ if have nginx; then
   fi
 fi
 
+# Final: make sure every CourierOfHearts service is freshly (re)started.
+if [ -x "$APP_DIR/scripts/restart.sh" ]; then
+  bash "$APP_DIR/scripts/restart.sh" || log "WARNING: final service restart reported a problem."
+fi
+
 log "Done. CourierOfHearts v3 is deployed for https://$PUBLIC_DOMAIN"
 log "  update:  $APP_DIR/scripts/update.sh"
+log "  restart: $APP_DIR/scripts/restart.sh"
 log "  stop:    $APP_DIR/scripts/stop.sh"
 log "  remove:  $APP_DIR/scripts/remove.sh [--purge]"

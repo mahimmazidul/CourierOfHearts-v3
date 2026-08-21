@@ -29,7 +29,8 @@ git fetch origin "$BRANCH"
 LOCAL="$(git rev-parse HEAD)"
 REMOTE="$(git rev-parse "origin/$BRANCH")"
 if [ "$LOCAL" = "$REMOTE" ]; then
-  log "Already up to date ($LOCAL). Nothing to do."
+  log "Code already up to date ($LOCAL) — restarting services anyway."
+  bash "$APP_DIR/scripts/restart.sh"
   exit 0
 fi
 log "Update available: $LOCAL -> $REMOTE"

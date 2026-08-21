@@ -44,3 +44,4 @@ if [ -n "$STILL" ]; then
 fi
 log "CourierOfHearts is stopped. Port $BACKEND_PORT is no longer listening."
 log "(nginx was deliberately left running; it may serve other sites.)"
+log "Start everything again with: bash $DEPLOY_ROOT/app/scripts/restart.sh"

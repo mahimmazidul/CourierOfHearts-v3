@@ -212,6 +212,8 @@ commit if verification fails.
 ## Stopping / removing
 
 ```bash
+scripts/restart.sh           # restart backend + backup timer, reload nginx,
+                             # health-check (setup/update run this for you)
 scripts/stop.sh              # stops ONLY CourierOfHearts services
 scripts/remove.sh            # safe uninstall: keeps DB, backups, secrets
 scripts/remove.sh --purge    # full purge (final verified backup first,
