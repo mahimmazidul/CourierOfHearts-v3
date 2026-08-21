@@ -163,8 +163,10 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
   }, []);
 
   const applyBodyFont = useCallback((font: FontChoice) => {
-    setBodyFont(font);
-    editorRef.current?.applyFontFamily(getFontFamilyByChoice(font).split(',')[0].replace(/'/g, ''));
+    // Like Word: with a selection, restyle only the selected text.
+    // With no selection, the choice sets the letter's base font.
+    const appliedToSelection = editorRef.current?.applyFontFamily(getFontFamilyByChoice(font));
+    if (!appliedToSelection) setBodyFont(font);
   }, []);
 
   // ---- Flowers ----------------------------------------------------------------
@@ -263,7 +265,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
   const fontPanel = (
     <div className={`${activeTab !== 'style' ? 'hidden lg:block' : ''}`}>
       <h3 className="font-heading text-[11px] tracking-[0.18em] text-ink/70 uppercase mb-2">Body Font</h3>
-      <p className="font-body text-[12px] text-ink/45 italic leading-relaxed mb-3">Select a word or even one letter, then choose a font — like a small parchment word processor.</p>
+      <p className="font-body text-[12px] text-ink/45 italic leading-relaxed mb-3">Select a word — even one letter — to change just that text. With nothing selected, your choice sets the whole letter's font.</p>
       <div className="space-y-1 mb-5">
         {BODY_FONTS.map(f => (
           <button key={f.value} onMouseDown={(e) => e.preventDefault()} onClick={() => applyBodyFont(f.value)}

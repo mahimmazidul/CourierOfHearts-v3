@@ -111,12 +111,17 @@ const LetterEditor = forwardRef<LetterEditorHandle, LetterEditorProps>(function 
     focus: () => editorRef.current?.focus(),
     getHtml: () => editorRef.current?.innerHTML || '',
     applyFontFamily: (family: string) => {
+      // Word-like semantics: apply ONLY when a real (non-collapsed) selection
+      // exists inside the editor; the caller falls back to changing the
+      // letter's base font otherwise.
       const el = editorRef.current;
       const selection = window.getSelection();
-      if (!el || !selection || selection.rangeCount === 0) return false;
+      if (!el || !selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
       if (!el.contains(selection.getRangeAt(0).commonAncestorContainer)) return false;
       el.focus();
-      document.execCommand('fontName', false, family.replace(/'/g, ''));
+      // The full family chain (incl. Bengali fallbacks) is applied so a mixed
+      // Bangla+English selection keeps proper Bangla glyphs.
+      document.execCommand('fontName', false, family);
       emitChange();
       return true;
     },
