@@ -385,10 +385,17 @@ else
   log "WARNING: backend not running (no systemd here) — start it with: node $APP_DIR/server/index.js"
 fi
 if have nginx; then
+  code="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $PUBLIC_DOMAIN" "http://127.0.0.1/" || true)"
   if curl -fsS -H "Host: $PUBLIC_DOMAIN" "http://127.0.0.1/" | grep -qi "courier of hearts"; then
     log "nginx serves the site for Host: $PUBLIC_DOMAIN"
+  elif [ "$code" = "301" ] || [ "$code" = "302" ]; then
+    # certbot installed the HTTP->HTTPS redirect; verify HTTPS itself.
+    if curl -fsS --resolve "$PUBLIC_DOMAIN:443:127.0.0.1" "https://$PUBLIC_DOMAIN/" 2>/dev/null | grep -qi "courier of hearts"; then
+      log "HTTP redirects to HTTPS and HTTPS serves the site — TLS is active. All good."
+    else
+      log "HTTP redirects ($code) but the HTTPS vhost did not answer locally — check: sudo nginx -T | grep -A5 'listen 443'"
+    fi
   else
-    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $PUBLIC_DOMAIN" "http://127.0.0.1/" || true)"
     log "WARNING: domain vhost returned HTTP $code."
     log "  nginx error log says:"
     sudo_or_root tail -3 /var/log/nginx/error.log 2>/dev/null | sed 's/^/    /' || true
