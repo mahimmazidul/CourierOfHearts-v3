@@ -84,7 +84,7 @@ test.describe('CourierOfHearts v3', () => {
 
     // Ceremony
     await page.goto(`/#/letter/${slug}`);
-    await page.waitForTimeout(3400);
+    await page.waitForTimeout(4900);
     const seal = page.locator('svg[role="button"]');
     await expect(seal).toBeVisible();
     await seal.click();
@@ -93,7 +93,7 @@ test.describe('CourierOfHearts v3', () => {
 
     // Reload keeps the letter readable
     await page.reload();
-    await page.waitForTimeout(3400);
+    await page.waitForTimeout(4900);
     await expect(page.locator('svg[role="button"]')).toBeVisible();
   });
 

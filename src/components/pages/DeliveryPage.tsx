@@ -15,11 +15,48 @@ import RevealHtml, { reducedMotion } from '@/components/letter/RevealHtml';
 
 type Step = 'loading' | 'error' | 'password' | 'arriving' | 'envelope' | 'cracking' | 'opening' | 'rising' | 'reading';
 
+/**
+ * The seal breaking for real: the same seal rendered three times, clipped
+ * into jagged shards that meet in the middle. A brief shudder, then the
+ * pieces separate sideways and tumble off the envelope.
+ */
+function ShatteringSeal({ sealType, sealColor, customInitials }: {
+  sealType: Letter['sealType'];
+  sealColor: Letter['sealColor'];
+  customInitials?: string;
+}) {
+  const SIZE = 76;
+  const shards: { clip: string; cls: string }[] = [
+    // left half, jagged fracture line down the middle
+    { clip: 'polygon(0% 0%, 54% 0%, 46% 32%, 58% 50%, 44% 72%, 52% 100%, 0% 100%)', cls: 'seal-shard-left' },
+    // upper-right piece
+    { clip: 'polygon(54% 0%, 100% 0%, 100% 58%, 58% 50%, 46% 32%)', cls: 'seal-shard-right' },
+    // lower-right piece that drops away
+    { clip: 'polygon(58% 50%, 100% 58%, 100% 100%, 52% 100%, 44% 72%)', cls: 'seal-shard-bottom' },
+  ];
+  return (
+    <div className="seal-crack-stage" style={{ width: SIZE, height: SIZE }} aria-hidden="true">
+      {shards.map((shard) => (
+        <div key={shard.cls} className={`seal-shard ${shard.cls}`} style={{ clipPath: shard.clip }}>
+          <WaxSealIcon sealType={sealType} sealColor={sealColor} customInitials={customInitials} size={SIZE} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void }) {
   // Pages reveal in sequence: the ink reaches page 2 only after page 1 is
   // fully written. pagesDone == number of fully revealed pages.
   const [pagesDone, setPagesDone] = useState(0);
   const [inkSettled, setInkSettled] = useState(0);
+  // The letter reads top-to-bottom: salutation fades in first, the body ink
+  // begins only after it (closing/signature already wait for the last page).
+  const [bodyStarted, setBodyStarted] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setBodyStarted(true), reducedMotion() ? 0 : 1100);
+    return () => clearTimeout(t);
+  }, []);
   const fontFamily = getFontFamilyByChoice(letter.bodyFont);
 
   // Single content path: sanitize -> paginate -> engrave (see LetterPreview).
@@ -42,7 +79,7 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10"
         onClick={() => { if (pagesDone < total) setInkSettled((n) => n + 1); }}>
         {pages.map((pageContent, pi) => (
-          <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0 unfold-letter"
+          <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0 letter-page-in"
             style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px', animationDelay: pi === 0 ? '0s' : '0.4s' }}>
 
             <div className="print-border hidden absolute inset-5 md:inset-7 pointer-events-none rounded-sm" />
@@ -60,7 +97,7 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
                 {letter.crest !== 'none' && <div className="flex justify-center mb-3 ink-fade-in"><CrestDecoration type={letter.crest} /></div>}
                 <div className="ink-fade-in"><OrnamentDivider className="w-28 md:w-36 mx-auto mb-5" color="#8b7340" /></div>
                 {letter.salutationEnabled !== false && letter.recipient && (
-                  <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in-delayed relative z-10 ink-engraved">{letter.salutation} {letter.recipient},</p>
+                  <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in relative z-10 ink-engraved">{letter.salutation} {letter.recipient},</p>
                 )}
               </div>
             )}
@@ -69,7 +106,7 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
               <RevealHtml
                 html={pageContent}
                 fontFamily={fontFamily}
-                active={pi === pagesDone}
+                active={bodyStarted && pi === pagesDone}
                 completeNow={inkSettled}
                 onDone={() => setPagesDone((done) => Math.max(done, pi + 1))}
               />
@@ -129,7 +166,7 @@ export default function DeliveryPage({ slug, onBack }: { slug: string; onBack: (
         if (result.data.requiresPassword) setStep('password');
         else {
           setStep('arriving');
-          setTimeout(() => setStep('envelope'), reducedMotion() ? 300 : 3000);
+          setTimeout(() => setStep('envelope'), reducedMotion() ? 300 : 4400);
         }
       } else {
         setError(result.error || 'Letter not found');
@@ -142,7 +179,7 @@ export default function DeliveryPage({ slug, onBack }: { slug: string; onBack: (
     setLetter(unlocked);
     setPwErr('');
     setStep('arriving');
-    setTimeout(() => setStep('envelope'), reducedMotion() ? 300 : 3000);
+    setTimeout(() => setStep('envelope'), reducedMotion() ? 300 : 4400);
   }, []);
 
   const handleUnlock = useCallback(async () => {
@@ -285,8 +322,8 @@ export default function DeliveryPage({ slug, onBack }: { slug: string; onBack: (
         )}
 
         {step === 'cracking' && (
-          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 seal-crack pointer-events-none" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.4))' }}>
-            <WaxSealIcon sealType={letter?.sealType || 'heart'} sealColor={letter?.sealColor || 'burgundy'} customInitials={letter?.customInitials} size={76} />
+          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.4))' }}>
+            <ShatteringSeal sealType={letter?.sealType || 'heart'} sealColor={letter?.sealColor || 'burgundy'} customInitials={letter?.customInitials} />
           </div>
         )}
       </div>

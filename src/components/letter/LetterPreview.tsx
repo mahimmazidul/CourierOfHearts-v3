@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo, useState, useEffect } from 'react';
 import type { SealType, SealColor, CrestType, FontChoice, SignatureFont, FlowerPlacement } from '@/types/letter';
 import WaxSealIcon from '@/components/icons/WaxSealIcon';
 import { OrnamentDivider, CornerOrnament } from '@/components/icons/SvgIcons';
@@ -58,6 +58,13 @@ export default function LetterPreview({
   // The preview shows the same letter-by-letter arrival the recipient sees.
   const [pagesDone, setPagesDone] = useState(0);
   const [inkSettled, setInkSettled] = useState(0);
+  // Salutation first, then the body ink — same order the recipient reads in.
+  const [bodyStarted, setBodyStarted] = useState(false);
+  useEffect(() => {
+    const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const t = setTimeout(() => setBodyStarted(true), reduced ? 0 : 1100);
+    return () => clearTimeout(t);
+  }, []);
 
   // Letter content is ALWAYS HTML (contentEditable entity-encodes text), so
   // there is exactly one path: sanitize -> paginate by measured height ->
@@ -103,7 +110,7 @@ export default function LetterPreview({
                 {customInitials && <div className="text-center mb-2 ink-fade-in"><span className="font-uncial text-5xl md:text-6xl text-burgundy/30 select-none">{[...customInitials][0]}</span></div>}
                 {crest !== 'none' && <div className="flex justify-center mb-3 ink-fade-in"><CrestDecoration type={crest} /></div>}
                 <div className="ink-fade-in"><OrnamentDivider className="w-28 md:w-36 mx-auto mb-5" color="#8b7340" /></div>
-                {salutationEnabled && recipient && <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in-delayed relative z-10 ink-engraved">{salutation} {recipient},</p>}
+                {salutationEnabled && recipient && <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in relative z-10 ink-engraved">{salutation} {recipient},</p>}
               </div>
             )}
 
@@ -112,7 +119,7 @@ export default function LetterPreview({
               <RevealHtml
                 html={pageContent}
                 fontFamily={fontFamily}
-                active={pi === pagesDone}
+                active={bodyStarted && pi === pagesDone}
                 completeNow={inkSettled}
                 onDone={() => setPagesDone((done) => Math.max(done, pi + 1))}
               />
