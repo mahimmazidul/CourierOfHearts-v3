@@ -295,13 +295,16 @@ EOF
     log "A non-stock default_server exists — leaving it untouched (check it does not serve this site)."
   fi
 
-  sudo_or_root tee "/etc/nginx/sites-available/$NGINX_SITE" >/dev/null <<EOF
-# CourierOfHearts v3 — static frontend + API proxy. Managed by setup.sh.
-server {
-    listen 80;
-    listen [::]:80;
-    server_name $PUBLIC_DOMAIN;
+  # The vhost is written idempotently by THIS script — including TLS when a
+  # certificate already exists. (Previously certbot edited this file and a
+  # re-run of setup clobbered its changes, killing HTTPS.)
+  CERT_DIR="/etc/letsencrypt/live/$PUBLIC_DOMAIN"
+  SSL_EXTRAS=""
+  [ -f /etc/letsencrypt/options-ssl-nginx.conf ] && SSL_EXTRAS="    include /etc/letsencrypt/options-ssl-nginx.conf;"
+  [ -f /etc/letsencrypt/ssl-dhparams.pem ] && SSL_EXTRAS="$SSL_EXTRAS
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;"
 
+  COMMON_LOCATIONS=$(cat <<EOF
     root $APP_DIR/dist;
     index index.html;
 
@@ -343,8 +346,45 @@ server {
     location / {
         try_files \$uri /index.html;
     }
+EOF
+)
+
+  if [ -f "$CERT_DIR/fullchain.pem" ]; then
+    log "TLS certificate found — writing HTTPS vhost (HTTP redirects)."
+    sudo_or_root tee "/etc/nginx/sites-available/$NGINX_SITE" >/dev/null <<EOF
+# CourierOfHearts v3 — managed by setup.sh (rewritten on every run).
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $PUBLIC_DOMAIN;
+    return 301 https://$PUBLIC_DOMAIN\$request_uri;
+}
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name $PUBLIC_DOMAIN;
+
+    ssl_certificate $CERT_DIR/fullchain.pem;
+    ssl_certificate_key $CERT_DIR/privkey.pem;
+$SSL_EXTRAS
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+$COMMON_LOCATIONS
 }
 EOF
+  else
+    log "No TLS certificate yet — writing HTTP vhost (certbot will add TLS)."
+    sudo_or_root tee "/etc/nginx/sites-available/$NGINX_SITE" >/dev/null <<EOF
+# CourierOfHearts v3 — managed by setup.sh (rewritten on every run).
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $PUBLIC_DOMAIN;
+
+$COMMON_LOCATIONS
+}
+EOF
+  fi
   sudo_or_root ln -sf "/etc/nginx/sites-available/$NGINX_SITE" "/etc/nginx/sites-enabled/$NGINX_SITE"
   sudo_or_root nginx -t
   sudo_or_root systemctl reload nginx 2>/dev/null \
@@ -395,7 +435,9 @@ if have nginx; then
     log "nginx serves the site for Host: $PUBLIC_DOMAIN"
   elif [ "$code" = "301" ] || [ "$code" = "302" ]; then
     # certbot installed the HTTP->HTTPS redirect; verify HTTPS itself.
-    if curl -fsS --resolve "$PUBLIC_DOMAIN:443:127.0.0.1" "https://$PUBLIC_DOMAIN/" 2>/dev/null | grep -qi "courier of hearts"; then
+    # -k: this is a LOCAL liveness check of the vhost; certificate trust is
+    # verified by the outside world, not by localhost.
+    if curl -fsSk --resolve "$PUBLIC_DOMAIN:443:127.0.0.1" "https://$PUBLIC_DOMAIN/" 2>/dev/null | grep -qi "courier of hearts"; then
       log "HTTP redirects to HTTPS and HTTPS serves the site — TLS is active. All good."
     else
       log "HTTP redirects ($code) but the HTTPS vhost did not answer locally — check: sudo nginx -T | grep -A5 'listen 443'"
