@@ -298,7 +298,18 @@ EOF
   # The vhost is written idempotently by THIS script — including TLS when a
   # certificate already exists. (Previously certbot edited this file and a
   # re-run of setup clobbered its changes, killing HTTPS.)
-  CERT_DIR="/etc/letsencrypt/live/$PUBLIC_DOMAIN"
+  # /etc/letsencrypt/live is root-only (0700): the existence check MUST run
+  # with privileges, or a cert would be missed and HTTPS silently dropped.
+  # certbot also sometimes stores lineages as <domain>-0001 — handle those.
+  CERT_DIR=""
+  if sudo_or_root test -f "/etc/letsencrypt/live/$PUBLIC_DOMAIN/fullchain.pem" 2>/dev/null; then
+    CERT_DIR="/etc/letsencrypt/live/$PUBLIC_DOMAIN"
+  else
+    CANDIDATE="$(sudo_or_root sh -c "ls -d /etc/letsencrypt/live/${PUBLIC_DOMAIN}* 2>/dev/null | sort | tail -1" || true)"
+    if [ -n "$CANDIDATE" ] && sudo_or_root test -f "$CANDIDATE/fullchain.pem" 2>/dev/null; then
+      CERT_DIR="$CANDIDATE"
+    fi
+  fi
   SSL_EXTRAS=""
   [ -f /etc/letsencrypt/options-ssl-nginx.conf ] && SSL_EXTRAS="    include /etc/letsencrypt/options-ssl-nginx.conf;"
   [ -f /etc/letsencrypt/ssl-dhparams.pem ] && SSL_EXTRAS="$SSL_EXTRAS
@@ -349,8 +360,8 @@ EOF
 EOF
 )
 
-  if [ -f "$CERT_DIR/fullchain.pem" ]; then
-    log "TLS certificate found — writing HTTPS vhost (HTTP redirects)."
+  if [ -n "$CERT_DIR" ]; then
+    log "TLS certificate found at $CERT_DIR — writing HTTPS vhost (HTTP redirects)."
     sudo_or_root tee "/etc/nginx/sites-available/$NGINX_SITE" >/dev/null <<EOF
 # CourierOfHearts v3 — managed by setup.sh (rewritten on every run).
 server {
