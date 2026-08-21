@@ -13,6 +13,7 @@ import RevealHtml from '@/components/letter/RevealHtml';
 interface LetterPreviewProps {
   salutation?: string;
   salutationEnabled?: boolean;
+  salutationFont?: FontChoice;
   recipient: string;
   content: string;
   closing?: string;
@@ -49,7 +50,7 @@ export const FlowerLayer = memo(function FlowerLayer({ flowers, opacity }: { flo
 });
 
 export default function LetterPreview({
-  salutation = 'My dearest', salutationEnabled = true, recipient, content, closing = 'Forever yours,',
+  salutation = 'My dearest', salutationEnabled = true, salutationFont = 'cormorant', recipient, content, closing = 'Forever yours,',
   signature, sealType, sealColor, crest,
   customInitials, bodyFont = 'eb-garamond', signatureFont = 'great-vibes',
   flowers = [], onBack, onSend, sending, readOnly,
@@ -111,7 +112,7 @@ export default function LetterPreview({
                 {customInitials && <div className="text-center mb-2 ink-fade-in"><span className="font-uncial text-5xl md:text-6xl text-burgundy/30 select-none">{[...customInitials][0]}</span></div>}
                 {crest !== 'none' && <div className="flex justify-center mb-3 ink-fade-in"><CrestDecoration type={crest} /></div>}
                 <div className="ink-fade-in"><OrnamentDivider className="w-28 md:w-36 mx-auto mb-5" color="#8b7340" /></div>
-                {salutationEnabled && recipient && <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in relative z-10 ink-engraved">{salutation} {recipient},</p>}
+                {salutationEnabled && recipient && <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in relative z-10 ink-engraved" style={{ fontFamily: getFontFamilyByChoice(salutationFont) }}>{salutation} {recipient},</p>}
               </div>
             )}
 

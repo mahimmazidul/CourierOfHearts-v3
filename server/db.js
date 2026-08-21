@@ -142,10 +142,22 @@ export function letterCount() {
   return stmts().count.get().n;
 }
 
+// Generic phrases only — never derived from sender, recipient or content.
+const SLUG_PHRASES = [
+  'a-little-letter',
+  'a-sealed-note',
+  'a-quiet-word',
+  'a-folded-heart',
+  'something-kept',
+  'ink-and-wax',
+  'a-waiting-page',
+  'a-small-parchment',
+];
+
 export function generateSlug() {
-  // Generic phrase + random suffix; never derived from letter content.
   for (let attempt = 0; attempt < 20; attempt++) {
-    const slug = `a-little-letter-${slugSuffix()}`;
+    const phrase = SLUG_PHRASES[Math.floor(Math.random() * SLUG_PHRASES.length)];
+    const slug = `${phrase}-${slugSuffix()}`;
     if (!findLetter(slug)) return slug;
   }
   throw new Error('Could not allocate a unique slug');

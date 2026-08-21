@@ -70,6 +70,7 @@ const PlacedFlower = memo(function PlacedFlower({ flower, selected, onPointerDow
 export default function ComposePage({ onLetterCreated, onBack }: ComposePageProps) {
   const [salutation, setSalutation] = useState('My dearest');
   const [salutationEnabled, setSalutationEnabled] = useState(true); // default: on
+  const [salutationFont, setSalutationFont] = useState<FontChoice>('cormorant');
   const [recipient, setRecipient] = useState('');
   const [closing, setClosing] = useState('Forever yours,');
   const [signature, setSignature] = useState('');
@@ -107,6 +108,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
         setRestoredDraft(draft);
         setSalutation(draft.salutation);
         setSalutationEnabled(draft.salutationEnabled);
+        if (draft.salutationFont) setSalutationFont(draft.salutationFont as FontChoice);
         setRecipient(draft.recipient);
         setClosing(draft.closing);
         setSignature(draft.signature);
@@ -131,6 +133,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
     void saveDraft({
       salutation: s.salutation as string,
       salutationEnabled: s.salutationEnabled as boolean,
+      salutationFont: s.salutationFont as string,
       recipient: s.recipient as string,
       content: contentRef.current,
       closing: s.closing as string,
@@ -146,9 +149,9 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
   }, 900)).current;
 
   useEffect(() => {
-    stateRef.current = { salutation, salutationEnabled, recipient, closing, signature, sealType, sealColor, crest, customInitials, bodyFont, signatureFont, flowers };
+    stateRef.current = { salutation, salutationEnabled, salutationFont, recipient, closing, signature, sealType, sealColor, crest, customInitials, bodyFont, signatureFont, flowers };
     if (draftReady) persistDraft();
-  }, [salutation, salutationEnabled, recipient, closing, signature, sealType, sealColor, crest, customInitials, bodyFont, signatureFont, flowers, draftReady, persistDraft]);
+  }, [salutation, salutationEnabled, salutationFont, recipient, closing, signature, sealType, sealColor, crest, customInitials, bodyFont, signatureFont, flowers, draftReady, persistDraft]);
 
   const handleEditorChange = useCallback((html: string) => {
     contentRef.current = html;
@@ -240,7 +243,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
     setSending(true);
     try {
       const payload: CreateLetterPayload = {
-        salutation, salutationEnabled, recipient: recipient.trim(), content: currentHtml,
+        salutation, salutationEnabled, salutationFont, recipient: recipient.trim(), content: currentHtml,
         closing, signature: signature.trim() || 'With love',
         sealType, sealColor, crest, customInitials: customInitials.trim(),
         bodyFont, signatureFont, flowers, isPrivate,
@@ -256,7 +259,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
     } finally {
       setSending(false);
     }
-  }, [salutation, salutationEnabled, recipient, closing, signature, sealType, sealColor, crest, customInitials, bodyFont, signatureFont, flowers, isPrivate, password, onLetterCreated, syncContentFromEditor]);
+  }, [salutation, salutationEnabled, salutationFont, recipient, closing, signature, sealType, sealColor, crest, customInitials, bodyFont, signatureFont, flowers, isPrivate, password, onLetterCreated, syncContentFromEditor]);
 
   const handlePreview = useCallback(() => {
     syncContentFromEditor();
@@ -303,6 +306,16 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
           <button key={s} onClick={() => setSalutation(s)}
             className={`py-1.5 px-3 text-[13px] font-body italic rounded-sm transition-all duration-500 ${salutation === s ? 'bg-ink/8 text-ink/90' : 'text-ink/40 hover:text-ink/65 hover:bg-ink/3'}`}>{s}</button>
         ))}
+      </div>
+      <div className={`mb-5 ${salutationEnabled ? '' : 'opacity-40 pointer-events-none'}`}>
+        <h4 className="font-heading text-[10px] tracking-[0.16em] text-ink/55 uppercase mb-2">Salutation Font</h4>
+        <div className="grid grid-cols-2 gap-1">
+          {BODY_FONTS.map(f => (
+            <button key={f.value} onClick={() => setSalutationFont(f.value)}
+              className={`py-1.5 px-2 text-left text-[13px] rounded-sm transition-colors duration-500 ${salutationFont === f.value ? 'bg-ink/8 text-ink/90' : 'text-ink/40 hover:text-ink/65 hover:bg-ink/3'}`}
+              style={{ fontFamily: f.family }}>{f.label}</button>
+          ))}
+        </div>
       </div>
       <h3 className="font-heading text-[11px] tracking-[0.18em] text-ink/70 uppercase mb-3">Closing</h3>
       <div className="flex flex-wrap gap-1.5">
@@ -378,7 +391,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
   );
 
   if (showPreview) {
-    return <LetterPreview salutation={salutation} salutationEnabled={salutationEnabled} recipient={recipient} content={content}
+    return <LetterPreview salutation={salutation} salutationEnabled={salutationEnabled} salutationFont={salutationFont} recipient={recipient} content={content}
       closing={closing} signature={signature || 'With love'} sealType={sealType} sealColor={sealColor}
       crest={crest} customInitials={customInitials} bodyFont={bodyFont}
       signatureFont={signatureFont} flowers={flowers}
@@ -440,7 +453,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
                 <div className="mb-5 relative z-10 flex flex-wrap items-baseline gap-1">
                   <input type="text" value={salutation} onChange={(e) => setSalutation(e.target.value)}
                     className="parchment-input font-display text-lg italic py-1 w-auto max-w-[160px]"
-                    style={{ borderBottomStyle: 'dashed', borderBottomColor: 'rgba(139,115,64,0.2)' }}
+                    style={{ borderBottomStyle: 'dashed', borderBottomColor: 'rgba(139,115,64,0.2)', fontFamily: getFontFamilyByChoice(salutationFont) }}
                     aria-label="Salutation" />
                   <input type="text" value={recipient} onChange={(e) => setRecipient(e.target.value)}
                     placeholder="their name"

@@ -13,6 +13,7 @@ const ALLOWED_FONTS = new Set([
   'EB Garamond', 'Cormorant Garamond', 'Crimson Pro', 'MedievalSharp',
   'Uncial Antiqua', 'Almendra', 'Great Vibes', 'Satisfy', 'Dancing Script',
   'Marck Script', 'Parisienne', 'Noto Serif Bengali', 'Hind Siliguri',
+  'Galada', 'Tiro Bangla', 'Baloo Da 2',
   'serif', 'cursive', 'sans-serif',
 ]);
 const ALLOWED_ALIGN = new Set(['left', 'center', 'right', 'justify']);

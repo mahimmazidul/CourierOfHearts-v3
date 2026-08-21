@@ -7,8 +7,9 @@ export const CRESTS = new Set(['none', 'royal', 'floral', 'shield', 'wreath', 'w
 export const BODY_FONTS = new Set([
   'eb-garamond', 'cormorant', 'crimson', 'medieval', 'uncial', 'almendra',
   'marck', 'parisienne', 'noto-serif-bengali', 'hind-siliguri',
+  'galada', 'tiro-bangla', 'baloo-da-2',
 ]);
-export const SIGNATURE_FONTS = new Set(['great-vibes', 'satisfy', 'dancing', 'marck', 'parisienne']);
+export const SIGNATURE_FONTS = new Set(['great-vibes', 'satisfy', 'dancing', 'marck', 'parisienne', 'galada']);
 
 export const SLUG_RE = /^[A-Za-z0-9_-]{4,64}$/;
 
@@ -59,6 +60,7 @@ export function validateLetterPayload(payload, { partial = false } = {}) {
 
   if (has('salutation') && (typeof payload.salutation !== 'string' || graphemeSafeLength(payload.salutation) > 100)) errors.push('salutation must be at most 100 characters');
   if (has('salutationEnabled') && typeof payload.salutationEnabled !== 'boolean') errors.push('salutationEnabled must be a boolean');
+  if (has('salutationFont') && !BODY_FONTS.has(payload.salutationFont)) errors.push('salutationFont is invalid');
   if (has('closing') && (typeof payload.closing !== 'string' || graphemeSafeLength(payload.closing) > 100)) errors.push('closing must be at most 100 characters');
   if (has('signature') && (typeof payload.signature !== 'string' || graphemeSafeLength(payload.signature) > 255)) errors.push('signature must be at most 255 characters');
   if (has('crest') && !CRESTS.has(payload.crest)) errors.push('crest is invalid');

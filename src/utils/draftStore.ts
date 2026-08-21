@@ -8,6 +8,7 @@ export interface LetterDraft {
   savedAt: string;
   salutation: string;
   salutationEnabled: boolean;
+  salutationFont?: string;
   recipient: string;
   content: string;
   closing: string;

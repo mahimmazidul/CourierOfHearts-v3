@@ -67,6 +67,7 @@ export const demoApi = {
       slug: randomSlug(),
       salutation: payload.salutation || 'My dearest',
       salutationEnabled: payload.salutationEnabled !== false,
+      salutationFont: payload.salutationFont || 'cormorant',
       recipient: payload.recipient.trim(),
       content: sanitizeLetterHtml(payload.content),
       closing: payload.closing || 'Forever yours,',

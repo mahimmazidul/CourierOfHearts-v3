@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Letter } from '@/types/letter';
 import { getLetter } from '@/services/api';
 import WaxSealIcon from '@/components/icons/WaxSealIcon';
@@ -14,6 +14,8 @@ interface LetterSentPageProps {
 export default function LetterSentPage({ slug, onBack, onPreview }: LetterSentPageProps) {
   const [letter, setLetter] = useState<Letter | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const linkRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -26,11 +28,26 @@ export default function LetterSentPage({ slug, onBack, onPreview }: LetterSentPa
 
   const shareUrl = `${window.location.origin}${window.location.pathname.replace(/index\.html$/, '')}#/letter/${slug}`;
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 3000);
-    });
+  const handleCopy = async () => {
+    // Clipboard API first; several mobile browsers reject it, so fall back
+    // to selecting the field and the legacy copy command.
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      ok = true;
+    } catch {
+      const input = linkRef.current;
+      if (input) {
+        input.focus();
+        input.select();
+        input.setSelectionRange(0, shareUrl.length);
+        try { ok = document.execCommand('copy'); } catch { ok = false; }
+      }
+    }
+    setCopied(ok);
+    setCopyFailed(!ok);
+    if (!ok) linkRef.current?.select();
+    setTimeout(() => { setCopied(false); setCopyFailed(false); }, 3500);
   };
 
   return (
@@ -60,7 +77,7 @@ export default function LetterSentPage({ slug, onBack, onPreview }: LetterSentPa
         <div className="real-paper paper-worn-edges rounded-sm p-5 mb-6">
           <label className="font-heading text-[11px] tracking-[0.2em] text-ink/40 uppercase block mb-2">Share this link</label>
           <div className="flex items-center gap-2">
-            <input type="text" readOnly value={shareUrl}
+            <input ref={linkRef} type="text" readOnly value={shareUrl}
               className="flex-1 parchment-input font-body text-sm text-ink/50 py-2 text-center px-3 rounded-sm"
               style={{ background: 'rgba(139,115,64,0.05)' }}
               onClick={(e) => (e.target as HTMLInputElement).select()} />
@@ -69,6 +86,11 @@ export default function LetterSentPage({ slug, onBack, onPreview }: LetterSentPa
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
+          {copyFailed && (
+            <p className="font-body text-[12px] text-ink/50 italic mt-2">
+              The link is selected — press and hold, then choose Copy.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2.5 justify-center">

@@ -3,8 +3,9 @@ export type SealColor = 'burgundy' | 'crimson' | 'emerald' | 'gold' | 'black';
 export type CrestType = 'royal' | 'floral' | 'shield' | 'wreath' | 'wings' | 'none';
 export type FontChoice =
   | 'eb-garamond' | 'cormorant' | 'crimson' | 'medieval' | 'uncial' | 'almendra'
-  | 'marck' | 'parisienne' | 'noto-serif-bengali' | 'hind-siliguri';
-export type SignatureFont = 'great-vibes' | 'satisfy' | 'dancing' | 'marck' | 'parisienne';
+  | 'marck' | 'parisienne' | 'noto-serif-bengali' | 'hind-siliguri'
+  | 'galada' | 'tiro-bangla' | 'baloo-da-2';
+export type SignatureFont = 'great-vibes' | 'satisfy' | 'dancing' | 'marck' | 'parisienne' | 'galada';
 
 export interface FlowerPlacement {
   id: string;
@@ -20,6 +21,7 @@ export interface Letter {
   slug: string;
   salutation: string;
   salutationEnabled: boolean;
+  salutationFont?: FontChoice;
   recipient: string;
   content: string;
   closing: string;
@@ -42,6 +44,7 @@ export interface Letter {
 export interface CreateLetterPayload {
   salutation: string;
   salutationEnabled: boolean;
+  salutationFont?: FontChoice;
   recipient: string;
   content: string;
   closing: string;

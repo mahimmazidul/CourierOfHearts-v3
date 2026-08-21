@@ -69,7 +69,8 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
                 {letter.crest !== 'none' && <div className="flex justify-center mb-3 ink-fade-in"><CrestDecoration type={letter.crest} /></div>}
                 <div className="ink-fade-in"><OrnamentDivider className="w-28 md:w-36 mx-auto mb-5" color="#8b7340" /></div>
                 {letter.salutationEnabled !== false && letter.recipient && (
-                  <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in relative z-10 ink-engraved">{letter.salutation} {letter.recipient},</p>
+                  <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in relative z-10 ink-engraved"
+                    style={{ fontFamily: getFontFamilyByChoice(letter.salutationFont || 'cormorant') }}>{letter.salutation} {letter.recipient},</p>
                 )}
               </div>
             )}

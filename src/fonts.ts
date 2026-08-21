@@ -28,3 +28,7 @@ import '@fontsource/noto-serif-bengali/400.css';
 import '@fontsource/noto-serif-bengali/600.css';
 import '@fontsource/hind-siliguri/400.css';
 import '@fontsource/hind-siliguri/600.css';
+import '@fontsource/galada/400.css';        // Bangla script/display — lovely for salutations & signatures
+import '@fontsource/tiro-bangla/400.css';   // elegant Bangla serif
+import '@fontsource/baloo-da-2/400.css';    // warm rounded Bangla
+import '@fontsource/baloo-da-2/600.css';

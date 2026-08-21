@@ -77,10 +77,10 @@ test.describe('CourierOfHearts v3', () => {
 
     // Send
     await page.getByRole('button', { name: 'Seal & Send' }).last().click();
-    await expect(page).toHaveURL(/#\/preview\/a-little-letter-/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/#\/preview\/[a-z-]+-\w{8}/, { timeout: 15_000 });
     const shareUrl = await page.locator('input[readonly]').inputValue();
     const slug = shareUrl.split('#/letter/')[1];
-    expect(slug).toMatch(/^a-little-letter-/);
+    expect(slug).toMatch(/^[a-z][a-z-]+-\w{8}$/);
 
     // Ceremony
     await page.goto(`/#/letter/${slug}`);

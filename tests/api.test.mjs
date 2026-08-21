@@ -103,7 +103,7 @@ test('create + read a normal letter (content sanitized, slug format)', async () 
     body: JSON.stringify({ ...basePayload, content: basePayload.content + '<script>alert(1)</script><img src=x onerror=alert(1)>' }),
   });
   assert.equal(status, 201);
-  assert.match(body.data.slug, /^a-little-letter-[2-9A-HJKMNP-Za-hjkmnp-z]{8}$/);
+  assert.match(body.data.slug, /^[a-z][a-z-]+-[2-9A-HJKMNP-Za-hjkmnp-z]{8}$/);
   assert.ok(!body.data.content.includes('<script'));
   assert.ok(!body.data.content.includes('onerror'));
   assert.ok(body.data.content.includes('❤️'));
