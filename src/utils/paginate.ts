@@ -118,6 +118,53 @@ function splitOversizedBlock(blockHtml: string, measurer: HTMLDivElement, maxHei
   return pieces.map((piece) => `<div>${piece.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>`);
 }
 
+
+/** A block with no inline formatting can be split without losing styling. */
+function isPlainBlock(html: string): { plain: boolean; text: string } {
+  const host = document.createElement('div');
+  host.innerHTML = html;
+  const child = host.firstElementChild;
+  const single = host.children.length <= 1 && (!child || /^(DIV|P)$/.test(child.tagName));
+  const inner = child ?? host;
+  const plain = single && inner.children.length === 0;
+  return { plain, text: (host.textContent || '') };
+}
+
+/**
+ * Fill the remaining space on a page by splitting a plain paragraph at a
+ * space (grapheme-safe). Returns [head, tail] or null when a split is not
+ * worthwhile (formatted block, tiny remainder, or nothing usefully fits).
+ */
+function splitBlockToFill(
+  blockHtml: string,
+  measurer: HTMLDivElement,
+  remainingPx: number
+): [string, string] | null {
+  if (remainingPx < 160) return null; // small gaps read as intentional
+  const { plain, text } = isPlainBlock(blockHtml);
+  if (!plain) return null; // never flatten bold/italic/aligned content
+  const parts = textGraphemes(text);
+  if (parts.length < 80) return null;
+
+  let low = 1;
+  let high = parts.length;
+  let fit = 0;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    measurer.textContent = parts.slice(0, mid).join('');
+    if (measurer.offsetHeight <= remainingPx) { fit = mid; low = mid + 1; } else { high = mid - 1; }
+  }
+  if (fit < 40 || fit >= parts.length) return null;
+  let cut = fit;
+  while (cut > fit * 0.5 && parts[cut - 1] !== ' ') cut--;
+  if (parts[cut - 1] !== ' ') return null; // no word boundary — keep block whole
+  const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const head = parts.slice(0, cut).join('').trimEnd();
+  const tail = parts.slice(cut).join('').trimStart();
+  if (!tail) return null;
+  return [`<div>${esc(head)}</div>`, `<div>${esc(tail)}</div>`];
+}
+
 /**
  * Split sanitized rich letter HTML into page-sized HTML chunks.
  * Returns at least one page.
@@ -148,14 +195,27 @@ export function paginateRichHtml(html: string, options: PaginateOptions): string
     let currentHeight = 0;
     let budget = opts.pageHeightPx - opts.firstPageReservedPx;
 
-    for (const block of blocks) {
+    const queue = [...blocks];
+    while (queue.length) {
+      const block = queue.shift() as string;
       measurer.innerHTML = block;
       const h = measurer.offsetHeight;
       if (current.length && currentHeight + h > budget) {
+        // Before starting a new page, try to fill the remaining space by
+        // splitting a plain paragraph at a word boundary — this removes the
+        // large mid-letter gaps that otherwise appear before page breaks.
+        const split = splitBlockToFill(block, measurer, budget - currentHeight);
+        if (split) {
+          current.push(split[0]);
+          queue.unshift(split[1]);
+        } else {
+          queue.unshift(block);
+        }
         pages.push(current.join(''));
         current = [];
         currentHeight = 0;
         budget = opts.pageHeightPx;
+        continue;
       }
       current.push(block);
       currentHeight += h;

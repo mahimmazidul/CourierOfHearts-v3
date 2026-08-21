@@ -45,10 +45,10 @@ body {
 ::-webkit-scrollbar-thumb { background: #8b7340; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #6d5930; }
 
-.font-heading { font-family: 'Cinzel', serif; letter-spacing: 0.06em; }
-.font-display { font-family: 'Cormorant Garamond', serif; }
-.font-body { font-family: 'EB Garamond', serif; }
-.font-script { font-family: 'Great Vibes', cursive; }
+.font-heading { font-family: 'Cinzel', 'Noto Serif Bengali', serif; letter-spacing: 0.06em; }
+.font-display { font-family: 'Cormorant Garamond', 'Noto Serif Bengali', serif; }
+.font-body { font-family: 'EB Garamond', 'Noto Serif Bengali', serif; }
+.font-script { font-family: 'Great Vibes', 'Hind Siliguri', cursive; }
 .font-medieval { font-family: 'MedievalSharp', cursive; }
 .font-uncial { font-family: 'Uncial Antiqua', serif; }
 .font-almendra { font-family: 'Almendra', serif; }
@@ -107,6 +107,11 @@ body {
   pointer-events: none;
   mix-blend-mode: multiply;
   border-radius: inherit;
+}
+/* The SVG turbulence grain is invisible at 6% opacity on small screens but
+   costs real GPU time on budget phones — skip it there. Desktop unchanged. */
+@media (max-width: 768px) {
+  .letter-paper::after { display: none; }
 }
 
 /* ========== INK ENGRAVED — deep pressed-into-paper ========== */
@@ -178,7 +183,7 @@ body {
   background: transparent;
   border: none;
   border-bottom: 1px solid rgba(139,115,64,0.3);
-  font-family: 'EB Garamond', serif;
+  font-family: 'EB Garamond', 'Noto Serif Bengali', serif;
   color: #1a1208;
   resize: none;
   outline: none;

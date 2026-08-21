@@ -36,7 +36,10 @@ export default function App() {
       break;
     case 'read':
     case 'shared':
-      page = <DeliveryPage slug={route.slug} onBack={goHome} />;
+      // key forces a fresh mount when moving between /read and /letter for
+      // the same slug — the recipient's share link always gets the full
+      // envelope-and-seal arrival, even right after the author previewed it.
+      page = <DeliveryPage key={`${route.page}:${route.slug}`} slug={route.slug} onBack={goHome} />;
       break;
     case 'my-letters':
       page = <MyLettersPage onBack={goHome} onCompose={() => navigate('/compose')} onPreview={(slug) => navigate(`/read/${slug}`)} />;
