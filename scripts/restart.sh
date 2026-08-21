@@ -29,15 +29,46 @@ else
   log "No systemd — start the backend manually: node $APP_DIR/server/index.js"
 fi
 
+# nginx: fully restarted by default (set COH_NGINX=reload for a zero-drop
+# reload instead, e.g. if this nginx also serves other busy sites).
 if have nginx || [ -x /usr/sbin/nginx ]; then
   export PATH="$PATH:/usr/sbin:/sbin"
   if sudo_or_root nginx -t >/dev/null 2>&1; then
-    sudo_or_root systemctl reload nginx 2>/dev/null \
-      || sudo_or_root nginx -s reload 2>/dev/null \
-      || log "WARNING: nginx reload failed (is nginx running?)"
-    log "nginx configuration validated and reloaded."
+    if [ "${COH_NGINX:-restart}" = "reload" ]; then
+      if sudo_or_root systemctl reload nginx 2>/dev/null || sudo_or_root nginx -s reload 2>/dev/null; then
+        log "nginx configuration validated and reloaded."
+      else
+        log "WARNING: nginx reload failed (is nginx running?)"
+      fi
+    else
+      if sudo_or_root systemctl restart nginx 2>/dev/null; then
+        log "nginx fully restarted (systemd)."
+      else
+        # Standalone nginx (no systemd unit running it): graceful quit, wait
+        # for the old master to release the ports, then start fresh. If the
+        # pid file is stale and quit cannot reach the master, terminate the
+        # nginx processes directly (we ARE restarting nginx, per operator).
+        sudo_or_root nginx -s quit 2>/dev/null || true
+        for _ in 1 2 3 4 5 6; do
+          pgrep -x nginx >/dev/null 2>&1 || break
+          sleep 0.5
+        done
+        if pgrep -x nginx >/dev/null 2>&1; then
+          sudo_or_root pkill -TERM -x nginx 2>/dev/null || true
+          for _ in 1 2 3 4 5 6; do
+            pgrep -x nginx >/dev/null 2>&1 || break
+            sleep 0.5
+          done
+        fi
+        if sudo_or_root nginx 2>/dev/null; then
+          log "nginx fully restarted (standalone)."
+        else
+          log "WARNING: nginx restart failed — check: sudo nginx -t && systemctl status nginx"
+        fi
+      fi
+    fi
   else
-    log "WARNING: nginx -t failed — NOT reloading. Inspect: sudo nginx -t"
+    log "WARNING: nginx -t failed — NOT touching nginx. Inspect: sudo nginx -t"
   fi
 fi
 
