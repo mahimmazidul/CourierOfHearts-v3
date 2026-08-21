@@ -1,0 +1,387 @@
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { Letter } from '@/types/letter';
+import { getLetter, unlockLetter, recoverLetter, recordLetterView } from '@/services/api';
+import WaxSealIcon from '@/components/icons/WaxSealIcon';
+import DustParticles from '@/components/effects/DustParticles';
+import CandleGlow from '@/components/effects/CandleGlow';
+import { HeartSigilIcon, OrnamentDivider, CornerOrnament } from '@/components/icons/SvgIcons';
+import CrestDecoration from '@/components/letter/CrestDecoration';
+import { FlowerLayer } from '@/components/letter/LetterPreview';
+import { getFontFamilyByChoice, getSigFontFamilyByChoice } from '@/config/fonts';
+import { escapeLetterHtml, hasRichLetterHtml, sanitizeLetterHtml } from '@/utils/sanitizeHtml';
+import { engraveEmojiHtml } from '@/utils/emojiEngrave';
+import { paginateRichHtml, splitPlainIntoPages } from '@/utils/paginate';
+
+type Step = 'loading' | 'error' | 'password' | 'arriving' | 'envelope' | 'cracking' | 'opening' | 'rising' | 'reading';
+
+/**
+ * Ink reveal ("typewriter") for sanitized letter HTML.
+ * The DOM is built ONCE; each animation frame only appends characters to the
+ * current text node — no re-parsing, no re-render, O(1) work per frame. This
+ * replaces v1's per-frame full HTML re-slice, which was the main source of
+ * jank on long letters.
+ */
+function RevealHtml({ html, fontFamily, onDone }: { html: string; fontFamily: string; onDone: () => void }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    host.innerHTML = html;
+
+    // Collect reveal units in document order: text nodes + engraved emoji.
+    interface Unit { kind: 'text'; node: Text; full: string } 
+    interface SvgUnit { kind: 'svg'; el: SVGElement }
+    const units: (Unit | SvgUnit)[] = [];
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+    let current: Node | null = walker.nextNode();
+    while (current) {
+      if (current.nodeType === Node.TEXT_NODE) {
+        const textNode = current as Text;
+        if (textNode.textContent) {
+          units.push({ kind: 'text', node: textNode, full: textNode.textContent });
+          textNode.textContent = '';
+        }
+      } else if ((current as Element).classList?.contains('coh-emoji')) {
+        const el = current as SVGElement;
+        el.style.visibility = 'hidden';
+        units.push({ kind: 'svg', el });
+      }
+      current = walker.nextNode();
+    }
+
+    const totalChars = units.reduce((sum, unit) => sum + (unit.kind === 'text' ? [...unit.full].length : 1), 0);
+    if (reducedMotion() || totalChars === 0) {
+      finishAll();
+      doneRef.current();
+      return;
+    }
+
+    const msPerChar = Math.max(12, Math.min(45, 2600 / Math.max(totalChars, 1)));
+    let unitIndex = 0;
+    let charIndex = 0; // grapheme index within current text unit
+    let carriedGraphemes: string[] | null = null;
+    let last = 0;
+    let raf = 0;
+    let finished = false;
+
+    // Printing mid-reveal must never produce a half-written page.
+    function completeForPrint() {
+      if (finished) return;
+      finished = true;
+      cancelAnimationFrame(raf);
+      finishAll();
+      doneRef.current();
+    }
+    window.addEventListener('beforeprint', completeForPrint);
+
+    function finishAll() {
+      for (const unit of units) {
+        if (unit.kind === 'text') unit.node.textContent = unit.full;
+        else unit.el.style.visibility = '';
+      }
+    }
+
+    function tick(ts: number) {
+      if (!last) last = ts;
+      let budget = Math.floor((ts - last) / msPerChar);
+      if (budget > 0) last = ts;
+      while (budget > 0 && unitIndex < units.length) {
+        const unit = units[unitIndex];
+        if (unit.kind === 'svg') {
+          unit.el.style.visibility = '';
+          unitIndex++;
+          budget--;
+          continue;
+        }
+        if (!carriedGraphemes) carriedGraphemes = [...unit.full];
+        const take = Math.min(budget, carriedGraphemes.length - charIndex);
+        charIndex += take;
+        budget -= take;
+        unit.node.textContent = carriedGraphemes.slice(0, charIndex).join('');
+        if (charIndex >= carriedGraphemes.length) {
+          unitIndex++;
+          charIndex = 0;
+          carriedGraphemes = null;
+        }
+      }
+      if (unitIndex < units.length) raf = requestAnimationFrame(tick);
+      else { finished = true; doneRef.current(); }
+    }
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('beforeprint', completeForPrint);
+    };
+  }, [html]);
+
+  return (
+    <div ref={hostRef} className="rich-letter-content ink-engraved whitespace-pre-wrap"
+      style={{ fontFamily, letterSpacing: '0.01em', wordSpacing: '0.04em' }} />
+  );
+}
+
+function reducedMotion(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void }) {
+  const [typingDone, setTypingDone] = useState(false);
+  const fontFamily = getFontFamilyByChoice(letter.bodyFont);
+
+  const pages = useMemo(() => {
+    const isRich = hasRichLetterHtml(letter.content);
+    const raw = isRich
+      ? paginateRichHtml(sanitizeLetterHtml(letter.content), { fontFamily })
+      : splitPlainIntoPages(letter.content).map((page) => escapeLetterHtml(page));
+    return raw.map((page) => engraveEmojiHtml(page));
+  }, [letter.content, fontFamily]);
+  const total = pages.length;
+  const closing = letter.closing || 'Forever yours,';
+
+  return (
+    <div className="min-h-screen parchment-bg">
+      <nav className="no-print flex items-center justify-between px-4 py-3 md:px-8 relative z-20"
+        style={{ borderBottom: '1px solid rgba(139,115,64,0.12)' }}>
+        <button onClick={onBack} className="font-heading text-[11px] tracking-[0.12em] text-ink/70 uppercase hover:text-ink transition-colors duration-500">&larr; Home</button>
+        <span className="font-heading text-[10px] tracking-[0.2em] text-ink/40 uppercase hidden sm:inline">A letter for {letter.recipient}</span>
+        <button onClick={() => window.print()} className="font-heading text-[10px] tracking-[0.12em] text-ink/70 uppercase hover:text-ink transition-colors duration-500">Print</button>
+      </nav>
+
+      <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10">
+        {pages.map((pageContent, pi) => (
+          <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0 unfold-letter"
+            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px', animationDelay: pi === 0 ? '0s' : '0.4s' }}>
+
+            <div className="print-border hidden absolute inset-5 md:inset-7 pointer-events-none rounded-sm" />
+            <div className="absolute top-0 left-0 pointer-events-none z-10"><CornerOrnament position="top-left" color="#8b7340" /></div>
+            <div className="absolute top-0 right-0 pointer-events-none z-10"><CornerOrnament position="top-right" color="#8b7340" /></div>
+            <div className="absolute bottom-0 left-0 pointer-events-none z-10"><CornerOrnament position="bottom-left" color="#8b7340" /></div>
+            <div className="absolute bottom-0 right-0 pointer-events-none z-10"><CornerOrnament position="bottom-right" color="#8b7340" /></div>
+
+            <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden rounded-sm"
+              style={{ backgroundImage: `repeating-linear-gradient(to bottom, transparent 0px, transparent 1.85em, rgba(100,80,40,0.04) 1.85em, rgba(100,80,40,0.04) 1.86em)`, backgroundSize: '100% 1.9em', backgroundPosition: '0 48px' }} />
+
+            {pi === 0 && (
+              <div className="relative z-10">
+                {letter.customInitials && <div className="text-center mb-2 ink-fade-in"><span className="font-uncial text-5xl md:text-6xl text-burgundy/30 select-none">{[...letter.customInitials][0]}</span></div>}
+                {letter.crest !== 'none' && <div className="flex justify-center mb-3 ink-fade-in"><CrestDecoration type={letter.crest} /></div>}
+                <div className="ink-fade-in"><OrnamentDivider className="w-28 md:w-36 mx-auto mb-5" color="#8b7340" /></div>
+                {letter.salutationEnabled !== false && letter.recipient && (
+                  <p className="font-display text-lg md:text-xl italic mb-5 ink-fade-in-delayed relative z-10 ink-engraved">{letter.salutation} {letter.recipient},</p>
+                )}
+              </div>
+            )}
+
+            <div className="print-safe-body text-[17px] md:text-[18px] leading-[1.95] relative z-10">
+              {pi === 0 ? (
+                <RevealHtml html={pageContent} fontFamily={fontFamily} onDone={() => setTypingDone(true)} />
+              ) : (
+                <div className="rich-letter-content ink-fade-in ink-engraved whitespace-pre-wrap"
+                  style={{ fontFamily, letterSpacing: '0.01em', wordSpacing: '0.04em' }}
+                  dangerouslySetInnerHTML={{ __html: pageContent }} />
+              )}
+            </div>
+
+            {pi === total - 1 && (typingDone || pi > 0) && (
+              <div className="relative z-10 ink-fade-in mt-8">
+                <div className="text-right space-y-1">
+                  <p className="font-display text-base italic ink-engraved">{closing}</p>
+                  <p className="text-2xl md:text-3xl ink-engraved" style={{ fontFamily: getSigFontFamilyByChoice(letter.signatureFont) }}>{letter.signature}</p>
+                </div>
+                <div className="flex justify-center mt-6"><WaxSealIcon sealType={letter.sealType} sealColor={letter.sealColor} customInitials={letter.customInitials} size={60} /></div>
+              </div>
+            )}
+
+            {total > 1 && <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10"><span className="font-heading text-[9px] tracking-[0.2em] text-ink/30 uppercase">{pi + 1} of {total}</span></div>}
+
+            <FlowerLayer flowers={letter.flowers || []} opacity={0.28} />
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function DeliveryPage({ slug, onBack }: { slug: string; onBack: () => void }) {
+  const [step, setStep] = useState<Step>('loading');
+  const [letter, setLetter] = useState<Letter | null>(null);
+  const [error, setError] = useState('');
+  const [pw, setPw] = useState('');
+  const [pwErr, setPwErr] = useState('');
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryInput, setRecoveryInput] = useState('');
+  const viewRecorded = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      const result = await getLetter(slug);
+      if (result.success && result.data) {
+        setLetter(result.data);
+        if (result.data.requiresPassword) setStep('password');
+        else {
+          setStep('arriving');
+          setTimeout(() => setStep('envelope'), reducedMotion() ? 300 : 3000);
+        }
+      } else {
+        setError(result.error || 'Letter not found');
+        setStep('error');
+      }
+    })();
+  }, [slug]);
+
+  const beginCeremony = useCallback((unlocked: Letter) => {
+    setLetter(unlocked);
+    setPwErr('');
+    setStep('arriving');
+    setTimeout(() => setStep('envelope'), reducedMotion() ? 300 : 3000);
+  }, []);
+
+  const handleUnlock = useCallback(async () => {
+    if (!pw.trim()) { setPwErr('Enter the passphrase.'); return; }
+    const result = await unlockLetter(slug, pw);
+    if (result.success && result.data) beginCeremony(result.data);
+    else if (result.code === 'RATE_LIMITED') setPwErr('Too many tries. Rest a moment, then try again.');
+    else setPwErr('Incorrect passphrase.');
+  }, [slug, pw, beginCeremony]);
+
+  const handleRecover = useCallback(async () => {
+    if (!recoveryInput.trim()) { setPwErr('Enter the recovery token.'); return; }
+    const result = await recoverLetter(slug, recoveryInput);
+    if (result.success && result.data) beginCeremony(result.data);
+    else setPwErr('Recovery failed.');
+  }, [slug, recoveryInput, beginCeremony]);
+
+  // Ceremony: click seal → crack → flap opens → letter rises → reading
+  const handleSeal = useCallback(() => {
+    if (!viewRecorded.current) {
+      viewRecorded.current = true;
+      void recordLetterView(slug);
+    }
+    if (reducedMotion()) { setStep('reading'); return; }
+    setStep('cracking');
+    setTimeout(() => setStep('opening'), 1300);
+    setTimeout(() => setStep('rising'), 2800);
+    setTimeout(() => setStep('reading'), 4800);
+  }, [slug]);
+
+  if (step === 'loading') return <div className="min-h-screen desk-bg flex items-center justify-center"><div className="animate-float"><HeartSigilIcon size={32} color="#8b7340" /></div></div>;
+
+  if (step === 'error') return (
+    <div className="min-h-screen parchment-bg flex items-center justify-center px-6">
+      <div className="text-center max-w-md">
+        <HeartSigilIcon size={40} color="#6B1025" className="mx-auto mb-6 opacity-40" />
+        <h1 className="font-display text-2xl text-ink/90 mb-3">{error}</h1>
+        <p className="font-body text-[15px] text-ink/55 mb-8">This letter may have been lost to time.</p>
+        <button onClick={onBack} className="font-heading text-[11px] tracking-[0.15em] uppercase py-3 px-8 bg-ink text-parchment-light rounded-sm hover:bg-ink-light transition-all duration-500">Return Home</button>
+      </div>
+    </div>
+  );
+
+  if (step === 'password') return (
+    <div className="min-h-screen desk-bg flex items-center justify-center px-6"><DustParticles /><CandleGlow />
+      <div className="relative z-20 letter-paper rounded-sm p-10 md:p-14 max-w-md w-full text-center">
+        <WaxSealIcon sealType={letter?.sealType || 'heart'} sealColor={letter?.sealColor || 'burgundy'} size={70} className="mx-auto mb-6" />
+        {!showRecovery ? (
+          <>
+            <h2 className="font-display text-xl text-ink/90 mb-2">This letter is sealed</h2>
+            <p className="font-body text-[15px] text-ink/60 mb-6">A passphrase is required.</p>
+            <input type="password" value={pw} onChange={e => setPw(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleUnlock()} placeholder="Enter the passphrase..." className="parchment-input w-full text-center font-body text-base py-3 mb-4" autoFocus autoComplete="current-password" aria-label="Letter passphrase" />
+            {pwErr && <p className="font-body text-[14px] text-burgundy mb-4 italic">{pwErr}</p>}
+            <button onClick={handleUnlock} className="font-heading text-[11px] tracking-[0.18em] uppercase py-3 px-8 bg-ink text-parchment-light rounded-sm hover:bg-ink-light transition-all duration-500">Break the Seal</button>
+            {/* Deliberately quiet: administrative recovery, not a user feature. */}
+            <button onClick={() => { setShowRecovery(true); setPwErr(''); }} className="block mx-auto mt-6 font-body text-[11px] text-ink/30 hover:text-ink/50 italic transition-colors duration-500">keeper's key</button>
+          </>
+        ) : (
+          <>
+            <h2 className="font-display text-xl text-ink/90 mb-2">Keeper's key</h2>
+            <p className="font-body text-[14px] text-ink/55 mb-6">Enter the per-letter recovery token (COH-RCV-…).</p>
+            <input type="text" value={recoveryInput} onChange={e => setRecoveryInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleRecover()} placeholder="COH-RCV-..." className="parchment-input w-full text-center font-body text-sm py-3 mb-4" autoComplete="off" spellCheck={false} aria-label="Recovery token" />
+            {pwErr && <p className="font-body text-[14px] text-burgundy mb-4 italic">{pwErr}</p>}
+            <button onClick={handleRecover} className="font-heading text-[11px] tracking-[0.18em] uppercase py-3 px-8 bg-ink text-parchment-light rounded-sm hover:bg-ink-light transition-all duration-500">Unlock</button>
+            <button onClick={() => { setShowRecovery(false); setPwErr(''); }} className="block mx-auto mt-6 font-body text-[11px] text-ink/30 hover:text-ink/50 italic transition-colors duration-500">back to passphrase</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
+  if (step === 'arriving') return (
+    <div className="min-h-screen desk-bg flex items-center justify-center px-6"><DustParticles /><CandleGlow />
+      <div className="relative z-20 text-center">
+        <div className="ink-fade-in mb-4"><p className="font-display text-base md:text-lg italic" style={{ color: 'rgba(180,160,110,0.6)' }}>A letter has arrived</p></div>
+        <div className="ink-fade-in-delayed"><p className="font-display text-3xl md:text-4xl" style={{ color: 'rgba(220,210,180,0.8)' }}>for {letter?.recipient}</p></div>
+      </div>
+    </div>
+  );
+
+  if (step === 'reading' && letter) return <ReadingView letter={letter} onBack={onBack} />;
+
+  // ==================== THE CEREMONY ====================
+  const isOpen = step === 'opening' || step === 'rising';
+  const isRising = step === 'rising';
+
+  return (
+    <div className="min-h-screen desk-bg flex items-center justify-center px-6 overflow-hidden">
+      <DustParticles /><CandleGlow />
+      <div className="relative z-20 flex flex-col items-center ink-fade-in">
+
+        <div className={`relative ${isRising ? 'envelope-shrink' : ''}`}
+          style={{ width: '290px', height: '200px', perspective: '800px' }}>
+
+          {/* Envelope back */}
+          <div className="absolute inset-0 rounded-[3px] overflow-hidden"
+            style={{ background: 'linear-gradient(170deg, #c4ad78 0%, #ccba85 30%, #c0aa72 60%, #b8a068 100%)', boxShadow: '0 2px 15px rgba(0,0,0,0.35)' }}>
+            <div className="absolute inset-0" style={{ backgroundImage: `
+              radial-gradient(ellipse 60px 40px at 15% 70%, rgba(90,65,25,0.12) 0%, transparent 70%),
+              radial-gradient(ellipse 40px 30px at 80% 25%, rgba(100,75,30,0.08) 0%, transparent 60%),
+              radial-gradient(ellipse 50px 35px at 55% 85%, rgba(75,55,18,0.07) 0%, transparent 55%)
+            ` }} />
+            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[1px]" style={{ background: 'linear-gradient(to bottom, transparent 8%, rgba(0,0,0,0.05) 50%, transparent 92%)' }} />
+            {(step === 'envelope' || step === 'cracking') && letter && (
+              <div className="absolute inset-x-0 bottom-8 flex justify-center px-6 pointer-events-none">
+                <p className="font-script text-xl select-none ink-engraved truncate max-w-full" style={{ opacity: 0.35 }}>{letter.recipient}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Flap */}
+          <div className={`absolute left-0 right-0 top-0 z-[5] ${isOpen ? 'envelope-flap-lift' : ''}`}
+            style={{ transformOrigin: 'top center', height: '100px' }}>
+            <div style={{
+              width: 0, height: 0,
+              borderLeft: '145px solid transparent', borderRight: '145px solid transparent',
+              borderTop: '100px solid #b09858',
+              filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.06))',
+            }} />
+          </div>
+
+          {isRising && (
+            <div className="absolute left-[8%] right-[8%] bottom-[10%] z-[4] letter-rise">
+              <div className="letter-paper rounded-[2px] p-4 text-center" style={{ minHeight: '60px' }}>
+                <p className="font-display text-sm text-ink/50 italic">{letter?.salutationEnabled !== false ? `${letter?.salutation || 'My dearest'} ` : ''}{letter?.recipient}...</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {step === 'envelope' && (
+          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30">
+            <div className="gentle-pulse cursor-pointer" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.4))' }}>
+              <WaxSealIcon sealType={letter?.sealType || 'heart'} sealColor={letter?.sealColor || 'burgundy'} customInitials={letter?.customInitials} size={76} animated onClick={handleSeal} />
+            </div>
+            <p className="font-heading text-[11px] tracking-[0.2em] uppercase text-center mt-4 select-none" style={{ color: 'rgba(220,210,180,0.55)' }}>Tap to break the seal</p>
+          </div>
+        )}
+
+        {step === 'cracking' && (
+          <div className="absolute top-[38%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 seal-crack pointer-events-none" style={{ filter: 'drop-shadow(0 3px 8px rgba(0,0,0,0.4))' }}>
+            <WaxSealIcon sealType={letter?.sealType || 'heart'} sealColor={letter?.sealColor || 'burgundy'} customInitials={letter?.customInitials} size={76} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

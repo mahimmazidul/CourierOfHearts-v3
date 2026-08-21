@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>The Courier of Hearts — Send a Letter Worth Keeping</title>
+    <meta name="description" content="Write beautiful medieval letters. Seal them with wax. Send them to the one you love." />
+    <link rel="canonical" href="https://domain.com/" />
+    <link rel="icon" href="favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <meta name="theme-color" content="#c4b48e" />
+    <!-- Open Graph / social sharing: deliberately generic. Letter links share
+         this same document, so link previews can never leak letter content. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Courier of Hearts" />
+    <meta property="og:title" content="The Courier of Hearts — Send a Letter Worth Keeping" />
+    <meta property="og:description" content="Write your heart on parchment. Seal it with wax. Send it to the one who matters most." />
+    <meta property="og:image" content="/images/envelope.jpg" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="The Courier of Hearts" />
+    <meta name="twitter:description" content="Write your heart on parchment. Seal it with wax. Send it to the one who matters most." />
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Courier of Hearts",
+      "description": "Write beautiful medieval letters. Seal them with wax. Send them to the one you love.",
+      "applicationCategory": "LifestyleApplication",
+      "operatingSystem": "Web"
+    }
+    </script>
+    <!-- Fonts are self-hosted (bundled via @fontsource) — no external CDN. -->
+  </head>
+  <body>
+    <!-- SVG filters for paper texture - invisible, used by CSS -->
+    <svg style="position:absolute;width:0;height:0;overflow:hidden">
+      <defs>
+        <filter id="paper-texture" x="0%" y="0%" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="5" seed="1" stitchTiles="stitch" result="noise"/>
+          <feDiffuseLighting in="noise" lighting-color="#ddd0b5" surfaceScale="2" result="lit">
+            <feDistantLight azimuth="45" elevation="60"/>
+          </feDiffuseLighting>
+          <feComposite in="SourceGraphic" in2="lit" operator="arithmetic" k1="1" k2="0" k3="0" k4="0"/>
+        </filter>
+        <filter id="paper-grain">
+          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch" result="grain"/>
+          <feColorMatrix type="saturate" values="0" in="grain" result="grey"/>
+          <feBlend in="SourceGraphic" in2="grey" mode="multiply" result="blended"/>
+        </filter>
+        <filter id="old-paper">
+          <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="4" seed="5" stitchTiles="stitch" result="noise"/>
+          <feDiffuseLighting in="noise" lighting-color="#c8b48a" surfaceScale="1.5" result="diffuse">
+            <feDistantLight azimuth="135" elevation="55"/>
+          </feDiffuseLighting>
+          <feBlend in="SourceGraphic" in2="diffuse" mode="multiply"/>
+        </filter>
+        <filter id="wavy-edges">
+          <feTurbulence type="turbulence" baseFrequency="0.01" numOctaves="3" seed="2" result="warp"/>
+          <feDisplacementMap in="SourceGraphic" in2="warp" scale="4" xChannelSelector="R" yChannelSelector="G"/>
+        </filter>
+        <!-- Wax surface: 3D bumpy waxy texture -->
+        <filter id="wax-surface" x="-5%" y="-5%" width="110%" height="110%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.12" numOctaves="4" seed="3" stitchTiles="stitch" result="waxNoise"/>
+          <feDiffuseLighting in="waxNoise" lighting-color="#ffffff" surfaceScale="1.8" diffuseConstant="0.9" result="waxDiffuse">
+            <feDistantLight azimuth="225" elevation="45"/>
+          </feDiffuseLighting>
+          <feComposite in="SourceGraphic" in2="waxDiffuse" operator="arithmetic" k1="0.7" k2="0.35" k3="0" k4="0" result="textured"/>
+          <feSpecularLighting in="waxNoise" specularConstant="0.6" specularExponent="18" lighting-color="#ffffff" surfaceScale="1.2" result="waxSpec">
+            <feDistantLight azimuth="225" elevation="55"/>
+          </feSpecularLighting>
+          <feComposite in="waxSpec" in2="SourceGraphic" operator="in" result="specMasked"/>
+          <feMerge>
+            <feMergeNode in="textured"/>
+            <feMergeNode in="specMasked"/>
+          </feMerge>
+        </filter>
+        <!-- Envelope aged paper texture -->
+        <filter id="envelope-paper" x="0%" y="0%" width="100%" height="100%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="5" seed="7" stitchTiles="stitch" result="envNoise"/>
+          <feDiffuseLighting in="envNoise" lighting-color="#d4c5a0" surfaceScale="1" diffuseConstant="1" result="envLit">
+            <feDistantLight azimuth="135" elevation="60"/>
+          </feDiffuseLighting>
+          <feBlend in="SourceGraphic" in2="envLit" mode="multiply"/>
+        </filter>
+      </defs>
+    </svg>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
