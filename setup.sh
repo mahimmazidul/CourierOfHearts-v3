@@ -42,6 +42,38 @@ sudo_or_root() { if is_root; then "$@"; elif have sudo; then sudo "$@"; else fai
 log "Running as user: $CURRENT_USER (home: $CURRENT_HOME)"
 log "Deployment root: $DEPLOY_ROOT"
 
+# ---------------------------------------------------- package auto-install
+# Installs only what CourierOfHearts genuinely needs and only via apt.
+# Never removes or upgrades anything unrelated.
+ensure_packages() {
+  if ! have apt-get; then
+    log "apt-get not available — skipping automatic package installation."
+    return 0
+  fi
+  local missing=()
+  have git      || missing+=(git)
+  have curl     || missing+=(curl)
+  have openssl  || missing+=(openssl)
+  have sqlite3  || missing+=(sqlite3)
+  have nginx    || [ -x /usr/sbin/nginx ] || missing+=(nginx)
+  have certbot  || missing+=(certbot python3-certbot-nginx)
+  if [ ${#missing[@]} -gt 0 ]; then
+    log "Installing required packages: ${missing[*]}"
+    sudo_or_root env DEBIAN_FRONTEND=noninteractive apt-get update -qq
+    sudo_or_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"
+  fi
+  # Node.js >= 20 (NodeSource; only when missing or too old)
+  local node_major=0
+  have node && node_major="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+  if [ "${node_major:-0}" -lt 20 ]; then
+    log "Installing Node.js 22 (NodeSource)..."
+    curl -fsSL https://deb.nodesource.com/setup_22.x | sudo_or_root bash -
+    sudo_or_root env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nodejs
+  fi
+}
+ensure_packages
+export PATH="$PATH:/usr/sbin:/sbin"
+
 have git  || fail "git is required"
 have node || fail "Node.js (>=20) is required"
 have npm  || fail "npm is required"
@@ -138,6 +170,18 @@ log "Installing dependencies (lockfile)..."
 npm ci --no-audit --no-fund
 log "Building frontend..."
 VITE_BASE=/ npm run build
+[ -f "$APP_DIR/dist/index.html" ] || fail "frontend build produced no dist/index.html"
+
+# nginx (www-data) must be able to TRAVERSE the path to dist and READ it.
+# Modern distros create homes with mode 750, which breaks this with an
+# opaque 500 ("rewrite or internal redirection cycle"). o+x on directories
+# grants traversal only — not listing, not reading of anything else.
+log "Granting nginx traverse/read access to the static files..."
+chmod o+x "$CURRENT_HOME" "$DEPLOY_ROOT" "$APP_DIR"
+find "$APP_DIR/dist" -type d -exec chmod o+rx {} +
+find "$APP_DIR/dist" -type f -exec chmod o+r {} +
+# Persistent data stays private regardless:
+chmod 700 "$CONFIG_DIR" "$DB_DIR" "$BACKUP_DIR" 2>/dev/null || true
 # Migrations run automatically at backend boot; verify the server loads.
 node --input-type=module -e "process.env.NODE_ENV='test'; await import('$APP_DIR/server/config.js'); console.log('server config loads');"
 
@@ -202,20 +246,53 @@ fi
 # ------------------------------------------------------------------ nginx
 if have nginx; then
   log "Configuring nginx (domain-only serving; raw IP gets 444)..."
-  # Default catch-all: refuse requests that are not for our domain.
+
+  # The distro's stock "Welcome to nginx" default site would answer raw-IP
+  # requests. If it is still enabled untouched, disable it (the file stays
+  # in sites-available; only the symlink is removed).
+  if [ -L /etc/nginx/sites-enabled/default ] && grep -qs "/var/www/html" /etc/nginx/sites-available/default; then
+    log "Disabling the stock nginx default site (raw IP must serve nothing)."
+    sudo_or_root rm -f /etc/nginx/sites-enabled/default
+  fi
+
+  # Default catch-all: refuse anything that is not for our domain — on both
+  # HTTP and HTTPS. For HTTPS, ssl_reject_handshake (nginx >= 1.19.4) drops
+  # the connection without needing any certificate; older nginx gets a
+  # throwaway self-signed cert instead.
   if ! grep -rqs "default_server" /etc/nginx/sites-enabled/ 2>/dev/null; then
-    sudo_or_root tee /etc/nginx/sites-available/coh-default-reject >/dev/null <<'EOF'
+    NGINX_BIN="$(command -v nginx || echo /usr/sbin/nginx)"
+    NGINX_VER="$($NGINX_BIN -v 2>&1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' || echo 0.0.0)"
+    if [ "$(printf '%s\n' '1.19.4' "$NGINX_VER" | sort -V | head -1)" = "1.19.4" ]; then
+      HTTPS_REJECT='    ssl_reject_handshake on;'
+    else
+      if [ ! -f /etc/nginx/coh-selfsigned.crt ]; then
+        sudo_or_root openssl req -x509 -nodes -newkey rsa:2048 -days 3650 \
+          -keyout /etc/nginx/coh-selfsigned.key -out /etc/nginx/coh-selfsigned.crt \
+          -subj "/CN=invalid" >/dev/null 2>&1
+      fi
+      HTTPS_REJECT='    ssl_certificate /etc/nginx/coh-selfsigned.crt;
+    ssl_certificate_key /etc/nginx/coh-selfsigned.key;'
+    fi
+    sudo_or_root tee /etc/nginx/sites-available/coh-default-reject >/dev/null <<EOF
 # Reject any request that does not match a configured server_name.
+# Raw-IP and unknown-host requests are dropped on HTTP and HTTPS alike.
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
     server_name _;
     return 444;
 }
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+$HTTPS_REJECT
+    return 444;
+}
 EOF
     sudo_or_root ln -sf /etc/nginx/sites-available/coh-default-reject /etc/nginx/sites-enabled/coh-default-reject
   else
-    log "A default_server already exists — leaving it untouched."
+    log "A non-stock default_server exists — leaving it untouched (check it does not serve this site)."
   fi
 
   sudo_or_root tee "/etc/nginx/sites-available/$NGINX_SITE" >/dev/null <<EOF
@@ -265,7 +342,10 @@ server {
 EOF
   sudo_or_root ln -sf "/etc/nginx/sites-available/$NGINX_SITE" "/etc/nginx/sites-enabled/$NGINX_SITE"
   sudo_or_root nginx -t
-  sudo_or_root systemctl reload nginx 2>/dev/null || sudo_or_root nginx -s reload
+  sudo_or_root systemctl reload nginx 2>/dev/null \
+    || sudo_or_root nginx -s reload 2>/dev/null \
+    || sudo_or_root nginx \
+    || log "WARNING: could not reload/start nginx — start it manually."
 
   # TLS (optional, non-destructive)
   if have certbot; then
@@ -299,14 +379,24 @@ log "Health checks..."
 sleep 2
 if curl -fsS "http://127.0.0.1:$BACKEND_PORT/api/health" >/dev/null 2>&1; then
   log "Backend healthy on 127.0.0.1:$BACKEND_PORT"
-else
+elif have systemctl && [ -d /run/systemd/system ]; then
   fail "Backend health check failed (see: journalctl -u $SERVICE_BACKEND)"
+else
+  log "WARNING: backend not running (no systemd here) — start it with: node $APP_DIR/server/index.js"
 fi
 if have nginx; then
   if curl -fsS -H "Host: $PUBLIC_DOMAIN" "http://127.0.0.1/" | grep -qi "courier of hearts"; then
     log "nginx serves the site for Host: $PUBLIC_DOMAIN"
   else
-    log "WARNING: nginx did not return the site for the domain host header."
+    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Host: $PUBLIC_DOMAIN" "http://127.0.0.1/" || true)"
+    log "WARNING: domain vhost returned HTTP $code."
+    log "  nginx error log says:"
+    sudo_or_root tail -3 /var/log/nginx/error.log 2>/dev/null | sed 's/^/    /' || true
+    if sudo -u www-data test -r "$APP_DIR/dist/index.html" 2>/dev/null; then
+      log "  (www-data CAN read dist — inspect the error log above)"
+    else
+      log "  Likely cause: www-data cannot read $APP_DIR/dist (home directory permissions)."
+    fi
   fi
   code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: not-our-domain.invalid' "http://127.0.0.1/" || true)"
   if [ "$code" = "000" ] || [ "$code" = "444" ]; then
