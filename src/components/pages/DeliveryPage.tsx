@@ -23,13 +23,30 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
   // The salutation must finish arriving BEFORE the body ink starts:
   // salutation -> body -> closing/signature, like a real letter is read.
   const [bodyStarted, setBodyStarted] = useState(false);
+  // The viewport follows the writing ink until the reader takes over.
+  const followRef = useRef(true);
   const fontFamily = getFontFamilyByChoice(letter.bodyFont);
 
   useEffect(() => {
     const delay = reducedMotion() ? 0 : 1100;
     const timer = setTimeout(() => setBodyStarted(true), delay);
-    return () => clearTimeout(timer);
+    const stopFollowing = () => { followRef.current = false; };
+    window.addEventListener('wheel', stopFollowing, { passive: true });
+    window.addEventListener('touchmove', stopFollowing, { passive: true });
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('wheel', stopFollowing);
+      window.removeEventListener('touchmove', stopFollowing);
+    };
   }, []);
+
+  // A freshly turned-open page glides to the top of the view, so its ink
+  // starts writing from the top of the sheet in front of the reader.
+  useEffect(() => {
+    if (pagesDone === 0 || !followRef.current) return;
+    const article = document.querySelectorAll('article.print-letter')[pagesDone];
+    article?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+  }, [pagesDone]);
 
   // Single content path: sanitize -> paginate -> engrave (see LetterPreview).
   const pages = useMemo(() => {
@@ -51,8 +68,12 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10"
         onClick={() => { if (pagesDone < total) setInkSettled((n) => n + 1); }}>
         {pages.map((pageContent, pi) => (
-          <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0 page-open"
-            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px', animationDelay: `${Math.min(pi, 3) * 0.35}s` }}>
+          // Later pages stay hidden until the ink reaches them — the reader
+          // never knows how many pages are coming. They remain mounted, so a
+          // mid-animation print still produces the complete letter.
+          <article key={pi}
+            className={`print-letter relative letter-paper rounded-sm mb-8 last:mb-0 ${pi <= pagesDone ? 'page-open' : 'page-unrevealed'}`}
+            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px' }}>
 
             <div className="print-border hidden absolute inset-5 md:inset-7 pointer-events-none rounded-sm" />
             <div className="absolute top-0 left-0 pointer-events-none z-10"><CornerOrnament position="top-left" color="#8b7340" /></div>
@@ -81,6 +102,8 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
                 fontFamily={fontFamily}
                 active={bodyStarted && pi === pagesDone}
                 completeNow={inkSettled}
+                startDelay={pi === 0 || reducedMotion() ? 0 : 1000 /* let the page finish turning */}
+                followRef={followRef}
                 onDone={() => setPagesDone((done) => Math.max(done, pi + 1))}
               />
             </div>
@@ -95,7 +118,13 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
               </div>
             )}
 
-            {total > 1 && <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10"><span className="font-heading text-[9px] tracking-[0.2em] text-ink/30 uppercase">{pi + 1} of {total}</span></div>}
+            {total > 1 && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10">
+                <span className="font-heading text-[9px] tracking-[0.2em] text-ink/30 uppercase">
+                  {pagesDone >= total ? `${pi + 1} of ${total}` : `${pi + 1}`}
+                </span>
+              </div>
+            )}
 
             <FlowerLayer flowers={letter.flowers || []} opacity={0.28} />
           </article>

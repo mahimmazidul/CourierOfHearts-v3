@@ -92,7 +92,8 @@ export default function LetterPreview({
       <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10"
         onClick={() => { if (pagesDone < totalPages) setInkSettled((n) => n + 1); }}>
         {pages.map((pageContent, pi) => (
-          <article key={pi} className="print-letter relative letter-paper rounded-sm mb-8 last:mb-0"
+          <article key={pi}
+            className={`print-letter relative letter-paper rounded-sm mb-8 last:mb-0 ${pi <= pagesDone ? '' : 'page-unrevealed'}`}
             style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px' }}>
 
             {/* Decorative frame: shown on every printed page */}
@@ -123,6 +124,7 @@ export default function LetterPreview({
                 fontFamily={fontFamily}
                 active={bodyStarted && pi === pagesDone}
                 completeNow={inkSettled}
+                startDelay={pi === 0 ? 0 : 600}
                 onDone={() => setPagesDone((done) => Math.max(done, pi + 1))}
               />
             </div>
@@ -138,7 +140,13 @@ export default function LetterPreview({
               </div>
             )}
 
-            {totalPages > 1 && <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10"><span className="font-heading text-[9px] tracking-[0.2em] text-ink/35 uppercase">{pi + 1} of {totalPages}</span></div>}
+            {totalPages > 1 && (
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10">
+                <span className="font-heading text-[9px] tracking-[0.2em] text-ink/35 uppercase">
+                  {pagesDone >= totalPages ? `${pi + 1} of ${totalPages}` : `${pi + 1}`}
+                </span>
+              </div>
+            )}
 
             <FlowerLayer flowers={flowers} opacity={0.3} />
           </article>

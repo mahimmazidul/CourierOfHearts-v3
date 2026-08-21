@@ -33,13 +33,17 @@ interface RevealState {
   raf: number;
 }
 
-export default function RevealHtml({ html, fontFamily, active = true, onDone, completeNow = 0 }: {
+export default function RevealHtml({ html, fontFamily, active = true, onDone, completeNow = 0, startDelay = 0, followRef }: {
   html: string;
   fontFamily: string;
   active?: boolean;
   onDone: () => void;
   /** Increment to finish the reveal instantly (tap-to-settle-the-ink). */
   completeNow?: number;
+  /** Wait this long after activation before the ink starts (page-turn time). */
+  startDelay?: number;
+  /** While .current is true, the viewport gently follows the writing ink. */
+  followRef?: { current: boolean };
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const doneRef = useRef(onDone);
@@ -98,6 +102,19 @@ export default function RevealHtml({ html, fontFamily, active = true, onDone, co
     let unitIndex = 0;
     let charIndex = 0;
     let last = 0;
+    let lastFollow = 0;
+
+    // Keep the writing point comfortably in view — like eyes following a pen.
+    const followInk = (ts: number) => {
+      if (!followRef?.current || ts - lastFollow < 320) return;
+      lastFollow = ts;
+      const unit = state.units[Math.min(unitIndex, state.units.length - 1)];
+      const el = unit?.kind === 'text' ? unit.node.parentElement : unit?.el;
+      const rect = el?.getBoundingClientRect?.();
+      if (rect && rect.bottom > window.innerHeight * 0.72) {
+        window.scrollBy({ top: rect.bottom - window.innerHeight * 0.55, behavior: 'smooth' });
+      }
+    };
 
     const tick = (ts: number) => {
       if (state.finished) return;
@@ -121,6 +138,7 @@ export default function RevealHtml({ html, fontFamily, active = true, onDone, co
           charIndex = 0;
         }
       }
+      followInk(ts);
       if (unitIndex < state.units.length) {
         state.raf = requestAnimationFrame(tick);
       } else {
@@ -128,8 +146,16 @@ export default function RevealHtml({ html, fontFamily, active = true, onDone, co
         doneRef.current();
       }
     };
-    state.raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(state.raf);
+    let delayTimer: ReturnType<typeof setTimeout> | undefined;
+    if (startDelay > 0) {
+      delayTimer = setTimeout(() => { state.raf = requestAnimationFrame(tick); }, startDelay);
+    } else {
+      state.raf = requestAnimationFrame(tick);
+    }
+    return () => {
+      if (delayTimer) clearTimeout(delayTimer);
+      cancelAnimationFrame(state.raf);
+    };
   }, [active, html]);
 
   // Tap-to-complete: the parent increments completeNow when the reader taps
