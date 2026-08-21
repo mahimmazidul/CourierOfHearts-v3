@@ -409,7 +409,7 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_270px] xl:grid-cols-[280px_minmax(620px,760px)_300px] gap-5 lg:gap-7 items-start">
-          <aside className="relative z-20 order-2 lg:order-1 lg:sticky lg:top-20 max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1">
+          <aside className="relative z-20 order-2 lg:order-1 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1">
             {fontPanel}
           </aside>
 
@@ -495,9 +495,9 @@ export default function ComposePage({ onLetterCreated, onBack }: ComposePageProp
             </div>
           </main>
 
-          <aside className="relative z-20 order-3 lg:sticky lg:top-20 max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1">
+          <aside className="relative z-20 order-3 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1">
             {accessoryPanel}
-            <div className="space-y-2 sticky bottom-4 lg:static z-30 mt-6">
+            <div className="space-y-2 sticky bottom-2 lg:static z-30 mt-6 coh-sendbar">
               {error && <p className="font-body text-[14px] text-burgundy text-center italic">{error}</p>}
               <button onClick={handleSend} disabled={sending}
                 className="w-full font-heading text-[11px] tracking-[0.18em] uppercase py-4 bg-ink text-parchment-light rounded-sm transition-all duration-500 hover:bg-ink-light disabled:opacity-40 flex items-center justify-center gap-2.5"

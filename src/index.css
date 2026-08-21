@@ -329,3 +329,18 @@ body {
 }
 .coh-flower-remove:hover { transform: scale(1.12); background: rgba(107,16,37,0.9); }
 .coh-flower-selected { outline: 1px dashed rgba(139,115,64,0.5); outline-offset: 3px; border-radius: 2px; }
+
+/* Mobile send bar: solid parchment backdrop while pinned, invisible on lg
+   where the bar sits statically inside the sidebar. */
+.coh-sendbar {
+  background: rgba(196,180,142,0.96);
+  backdrop-filter: blur(6px);
+  padding: 8px;
+  margin-left: -8px;
+  margin-right: -8px;
+  border-radius: 2px;
+  box-shadow: 0 -2px 12px rgba(80,60,30,0.10);
+}
+@media (min-width: 1024px) {
+  .coh-sendbar { background: transparent; backdrop-filter: none; padding: 0; margin: 0; box-shadow: none; }
+}
