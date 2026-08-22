@@ -114,6 +114,11 @@ function sharePageHtml(slug, isProtected) {
     : 'Someone wrote you something from the heart on CourierOfHearts.';
   const image = `${config.publicBaseUrl}/images/envelope.jpg`;
   const safeSlug = encodeURIComponent(String(slug)).replace(/%2F/gi, '');
+  const target = `/#/letter/${safeSlug}`;
+  // The site ships CSP script-src 'self', which blocks inline scripts — so
+  // the browser redirect uses <meta http-equiv=refresh>, which CSP does not
+  // block. The parchment-styled fallback below is only seen if even meta
+  // refresh is disabled (some in-app browsers).
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -130,12 +135,23 @@ function sharePageHtml(slug, isProtected) {
 <meta name="twitter:card" content="summary" />
 <meta name="twitter:title" content="${title}" />
 <meta name="twitter:description" content="${description}" />
-<script>window.location.replace('/#/letter/' + ${JSON.stringify(safeSlug)});</script>
+<meta http-equiv="refresh" content="0;url=${target}" />
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #c4b48e; font-family: Georgia, 'Times New Roman', serif; color: #1a1208; }
+  .card { background: #cfc098; border: 1px solid rgba(139,115,64,0.35); border-radius: 3px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.12); padding: 3rem 2.5rem; text-align: center; max-width: 22rem; }
+  .card p { color: rgba(26,18,8,0.65); font-style: italic; margin: 0 0 1.5rem; }
+  .card a { display: inline-block; background: #1a1208; color: #e0d5b8; text-decoration: none;
+            letter-spacing: 0.15em; text-transform: uppercase; font-size: 0.7rem; padding: 0.9rem 1.8rem; border-radius: 2px; }
+</style>
 </head>
 <body>
-<p style="font-family: Georgia, serif; text-align: center; margin-top: 4rem; color: #3d3020;">
-${title} \u2014 <a href="/#/letter/${safeSlug}">open Courier of Hearts</a>
-</p>
+<div class="card">
+  <div style="font-size:2rem; margin-bottom:0.75rem;">\u{1F48C}</div>
+  <p>${title}</p>
+  <a href="${target}">Open the letter</a>
+</div>
 </body>
 </html>`;
 }

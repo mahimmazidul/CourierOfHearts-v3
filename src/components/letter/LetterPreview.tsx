@@ -94,7 +94,7 @@ export default function LetterPreview({
         {pages.map((pageContent, pi) => (
           <article key={pi}
             className={`print-letter relative letter-paper rounded-sm mb-8 last:mb-0 ${pi <= pagesDone ? '' : 'page-unrevealed'}`}
-            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px' }}>
+            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: totalPages === 1 ? '340px' : '600px' }}>
 
             {/* Decorative frame: shown on every printed page */}
             <div className="print-border hidden absolute inset-5 md:inset-7 pointer-events-none rounded-sm" />

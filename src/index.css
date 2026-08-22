@@ -467,3 +467,16 @@ html {
 @media print {
   .page-unrevealed { display: block !important; }
 }
+
+
+/* A short single-page letter floats in the middle of the viewport instead of
+   hugging the top. Screen only — print keeps its own geometry. */
+@media screen {
+  .coh-center-single {
+    min-height: calc(100vh - 120px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .coh-center-single > article { width: 100%; }
+}

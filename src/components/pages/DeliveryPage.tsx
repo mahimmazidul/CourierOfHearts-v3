@@ -65,7 +65,7 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
         <button onClick={() => window.print()} className="font-heading text-[10px] tracking-[0.12em] text-ink/70 uppercase hover:text-ink transition-colors duration-500">Print</button>
       </nav>
 
-      <div className="max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10"
+      <div className={`max-w-3xl mx-auto px-4 py-8 md:py-12 relative z-10 ${total === 1 ? 'coh-center-single' : ''}`}
         onClick={() => { if (pagesDone < total) setInkSettled((n) => n + 1); }}>
         {pages.map((pageContent, pi) => (
           // Later pages stay hidden until the ink reaches them — the reader
@@ -73,7 +73,7 @@ function ReadingView({ letter, onBack }: { letter: Letter; onBack: () => void })
           // mid-animation print still produces the complete letter.
           <article key={pi}
             className={`print-letter relative letter-paper rounded-sm mb-8 last:mb-0 ${pi <= pagesDone ? 'page-open' : 'page-unrevealed'}`}
-            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: '600px' }}>
+            style={{ padding: 'clamp(32px, 6vw, 64px)', minHeight: total === 1 ? '340px' : '600px' }}>
 
             <div className="print-border hidden absolute inset-5 md:inset-7 pointer-events-none rounded-sm" />
             <div className="absolute top-0 left-0 pointer-events-none z-10"><CornerOrnament position="top-left" color="#8b7340" /></div>
